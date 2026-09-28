@@ -3,7 +3,7 @@
 // Não intercepta chamadas ao Firebase: a lista de jogos e favoritos
 // sempre vem da nuvem quando há conexão.
 
-var CACHE_NAME = 'zenkai-cache-v3';
+var CACHE_NAME = 'zenkai-cache-v4';
 var ASSETS_TO_CACHE = [
   './',
   './index.html',

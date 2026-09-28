@@ -17,13 +17,15 @@
 
   var db = null;
   var auth = null;
-  var GAMES_DOC_REF = null;
+  var GAMES_DOC_REF = null;   // documento antigo (só leitura, usado na migração)
+  var GAMES_COL = null;       // coleção nova: um documento por jogo
   try {
     if (typeof firebase !== 'undefined' && firebaseConfig.apiKey !== 'SUA_API_KEY') {
       firebase.initializeApp(firebaseConfig);
       db = firebase.firestore();
       auth = firebase.auth();
       GAMES_DOC_REF = db.collection('zenkai').doc('games');
+      GAMES_COL = db.collection('games');
     } else {
       console.warn('Firebase não configurado ainda: os jogos vão ficar só neste navegador (localStorage).');
     }
@@ -348,21 +350,70 @@
     });
   }
 
-  function saveGames() {
-    // Cache local instantâneo (funciona offline e evita tela vazia ao abrir)
+  // ====== Jogos na nuvem: um documento por jogo (coleção "games") ======
+  var LEGACY_BASE_TIME = 1600000000000; // mantém a ordem dos jogos antigos na migração
+
+  function cacheGamesLocal() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(games));
     } catch (e) {
       console.error(e);
       showToast('Erro ao salvar localmente (talvez imagens muito grandes)', true);
     }
-    // Fonte de verdade: nuvem (Firestore), acessível de qualquer dispositivo
-    if (GAMES_DOC_REF) {
-      GAMES_DOC_REF.set({ list: games, updatedAt: Date.now() }).catch(function(e) {
-        console.error('Erro ao salvar na nuvem:', e);
-        showToast('Salvo neste aparelho, mas falhou ao sincronizar com a nuvem', true);
+  }
+  function saveGames() { cacheGamesLocal(); }
+
+  function gameToDoc(g) {
+    return {
+      name: g.name || '',
+      version: g.version || '',
+      cover: g.cover || '',
+      password: g.password || '',
+      featured: !!g.featured,
+      links: g.links || [],
+      createdAt: g.createdAt || Date.now(),
+      updatedAt: Date.now(),
+      updatedBy: currentUser ? (currentUser.email || '') : ''
+    };
+  }
+
+  function cloudError(e) {
+    console.error('Erro ao salvar na nuvem:', e);
+    showToast('Salvo neste aparelho, mas falhou ao sincronizar com a nuvem (' + (e && e.code ? e.code : 'erro') + ')', true);
+  }
+
+  function saveGame(game) {
+    cacheGamesLocal();
+    if (GAMES_COL && game) GAMES_COL.doc(game.id).set(gameToDoc(game)).catch(cloudError);
+  }
+
+  function deleteGameDoc(id) {
+    cacheGamesLocal();
+    if (GAMES_COL) GAMES_COL.doc(id).delete().catch(cloudError);
+  }
+
+  // Grava/apaga vários documentos em lotes (limite do Firestore: 500 por lote)
+  function batchWrite(ops) {
+    if (!db || !ops.length) return Promise.resolve();
+    var chunks = [];
+    for (var i = 0; i < ops.length; i += 400) chunks.push(ops.slice(i, i + 400));
+    return chunks.reduce(function(chain, chunk) {
+      return chain.then(function() {
+        var b = db.batch();
+        chunk.forEach(function(op) {
+          if (op.del) b.delete(GAMES_COL.doc(op.id)); else b.set(GAMES_COL.doc(op.id), op.data);
+        });
+        return b.commit();
       });
-    }
+    }, Promise.resolve());
+  }
+
+  function saveManyGames(list, removeIds) {
+    cacheGamesLocal();
+    if (!GAMES_COL) return;
+    var ops = (removeIds || []).map(function(id) { return { del: true, id: id }; });
+    list.forEach(function(g) { ops.push({ id: g.id, data: gameToDoc(g) }); });
+    batchWrite(ops).catch(cloudError);
   }
 
   function loadGames(onReady) {
@@ -378,7 +429,7 @@
     }
 
     if (games.length === 0) {
-      games = DEFAULT_GAMES.map(function(g) {
+      games = DEFAULT_GAMES.map(function(g, i) {
         return {
           id: generateId(),
           name: g.name,
@@ -386,6 +437,7 @@
           cover: g.cover || '',
           password: g.password || '',
           featured: !!g.featured,
+          createdAt: LEGACY_BASE_TIME + i,
           links: g.links.slice()
         };
       });
@@ -394,16 +446,38 @@
     if (onReady) onReady();
 
     // 2) Busca a versão da nuvem, que é a fonte de verdade entre dispositivos
-    if (GAMES_DOC_REF) {
-      GAMES_DOC_REF.get().then(function(doc) {
-        if (doc.exists && Array.isArray(doc.data().list)) {
-          games = doc.data().list;
-          try { localStorage.setItem(STORAGE_KEY, JSON.stringify(games)); } catch (e) {}
-          if (onReady) onReady();
-        } else {
-          // Ainda não existe nada na nuvem: envia o que temos agora (local/padrão)
-          saveGames();
+    if (GAMES_COL) {
+      function applyCloud(list) {
+        games = list;
+        cacheGamesLocal();
+        if (onReady) onReady();
+      }
+      GAMES_COL.get().then(function(snap) {
+        if (!snap.empty) {
+          var list = [];
+          snap.forEach(function(doc) { var g = doc.data(); g.id = doc.id; list.push(g); });
+          list.sort(function(a, b) { return (a.createdAt || 0) - (b.createdAt || 0); });
+          applyCloud(list);
+          return;
         }
+        // Coleção nova vazia: tenta o documento antigo (migração automática feita por um admin)
+        return GAMES_DOC_REF.get().then(function(doc) {
+          if (doc.exists && Array.isArray(doc.data().list)) {
+            var legacy = doc.data().list.map(function(g, i) {
+              if (!g.id) g.id = generateId();
+              if (!g.createdAt) g.createdAt = LEGACY_BASE_TIME + i;
+              return g;
+            });
+            applyCloud(legacy);
+            if (isAdmin) {
+              saveManyGames(legacy, []);
+              showToast('Jogos migrados para o novo formato (' + legacy.length + ')');
+            }
+          } else if (isAdmin) {
+            // Nada em lugar nenhum: envia o que temos agora (local/padrão)
+            saveManyGames(games, []);
+          }
+        });
       }).catch(function(e) {
         console.error('Erro ao carregar da nuvem:', e);
         showToast('Sem conexão com a nuvem — mostrando dados salvos neste aparelho', true);
@@ -661,7 +735,7 @@
         if (!game) return;
         game.featured = !game.featured;
         logHistory(game.featured ? 'feature' : 'unfeature', { game: game.name, gameId: game.id });
-        saveGames();
+        saveGame(game);
         renderGames(searchInput.value);
         showToast(game.featured ? 'Adicionado aos destaques!' : 'Removido dos destaques');
       });
@@ -688,7 +762,7 @@
         var removed = games.filter(function(g) { return g.id === id; })[0];
         games = games.filter(function(g) { return g.id !== id; });
         if (removed) logHistory('remove', { game: removed.name, gameId: removed.id, detail: (removed.links ? removed.links.length : 0) + ' links' });
-        saveGames();
+        deleteGameDoc(id);
         renderGames(searchInput.value);
         showToast('Jogo removido');
       });
@@ -1003,7 +1077,7 @@
         if (!g) return;
         g.featured = !g.featured;
         logHistory(g.featured ? 'feature' : 'unfeature', { game: g.name, gameId: g.id });
-        saveGames();
+        saveGame(g);
         detailsModalOverlay.classList.remove('active');
         renderGames(searchInput.value);
         showToast(g.featured ? 'Adicionado aos destaques!' : 'Removido dos destaques');
@@ -1076,16 +1150,30 @@
       showToast('Escolha um arquivo de imagem', true);
       return;
     }
-    if (file.size > 2 * 1024 * 1024) {
-      showToast('Imagem muito grande (máx 2MB)', true);
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Imagem muito grande (máx 10MB)', true);
       return;
     }
+    // Reduz e comprime a capa (máx. 800px, JPEG) para o documento do jogo ficar leve
     var reader = new FileReader();
     reader.onload = function(e) {
-      pendingCoverData = e.target.result;
-      coverPreview.src = pendingCoverData;
-      coverPreview.style.display = 'block';
-      coverUrlInput.value = '';
+      var img = new Image();
+      img.onload = function() {
+        var max = 800, w = img.width, h = img.height;
+        var k = Math.min(1, max / Math.max(w, h));
+        var cv = document.createElement('canvas');
+        cv.width = Math.round(w * k); cv.height = Math.round(h * k);
+        var ctx = cv.getContext('2d');
+        ctx.fillStyle = '#0a0a0b';
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        pendingCoverData = cv.toDataURL('image/jpeg', 0.82);
+        coverPreview.src = pendingCoverData;
+        coverPreview.style.display = 'block';
+        coverUrlInput.value = '';
+      };
+      img.onerror = function() { showToast('Não foi possível ler essa imagem', true); };
+      img.src = e.target.result;
     };
     reader.readAsDataURL(file);
   });
@@ -1103,7 +1191,7 @@
 
     game.cover = novaCapa;
     logHistory('cover', { game: game.name, gameId: game.id });
-    saveGames();
+    saveGame(game);
     renderGames(searchInput.value);
     closeCoverModal();
     showToast('Capa atualizada!');
@@ -1117,7 +1205,7 @@
     if (!game) return;
     game.cover = '';
     logHistory('cover', { game: game.name, gameId: game.id, detail: 'removeu' });
-    saveGames();
+    saveGame(game);
     renderGames(searchInput.value);
     closeCoverModal();
     showToast('Capa removida');
@@ -1241,13 +1329,15 @@
         cover: item.cover ? String(item.cover).trim() : '',
         password: item.password ? String(item.password).trim() : '',
         featured: !!item.featured,
+        createdAt: Date.now() + validos.length,
         links: links
       });
     });
     if (validos.length === 0) { showToast('Nenhum jogo válido encontrado', true); return; }
+    var removeIds = replaceAllCheckbox.checked ? games.map(function(g) { return g.id; }) : [];
     if (replaceAllCheckbox.checked) games = validos;
     else games = games.concat(validos);
-    saveGames();
+    saveManyGames(validos, removeIds);
     renderGames(searchInput.value);
     logHistory('import', { detail: validos.length + ' jogos' + (replaceAllCheckbox.checked ? ' (substituiu a coleção)' : '') });
     closeImportModal();
@@ -1294,9 +1384,10 @@
     games.push({
       id: generateId(),
       name: name, version: version, cover: cover, password: password, links: links,
-      featured: gameFeaturedInput ? gameFeaturedInput.checked : false
+      featured: gameFeaturedInput ? gameFeaturedInput.checked : false,
+      createdAt: Date.now()
     });
-    saveGames();
+    saveGame(games[games.length - 1]);
     renderGames(searchInput.value);
     logHistory('add', { game: name, gameId: games[games.length - 1].id });
     closeModal();
