@@ -182,6 +182,18 @@
   var userEmailLabel           = document.getElementById('userEmailLabel');
   var adminPill                = document.getElementById('adminPill');
   var logoutBtn                = document.getElementById('logoutBtn');
+  var authBox                  = document.getElementById('authBox');
+  var verifyEmail              = document.getElementById('verifyEmail');
+  var verifyMsg                = document.getElementById('verifyMsg');
+  var verifyCheckBtn           = document.getElementById('verifyCheckBtn');
+  var verifyResendBtn          = document.getElementById('verifyResendBtn');
+  var verifyLogoutBtn          = document.getElementById('verifyLogoutBtn');
+  var adminPanelBtn            = document.getElementById('adminPanelBtn');
+  var adminModalOverlay        = document.getElementById('adminModalOverlay');
+  var admUsersList             = document.getElementById('admUsersList');
+  var admHistoryList           = document.getElementById('admHistoryList');
+  var admHelp                  = document.getElementById('admHelp');
+  var closeAdminBtn            = document.getElementById('closeAdminBtn');
 
   function generateId() {
     return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11);
@@ -314,6 +326,7 @@
       var confirm = signupPasswordConfirmInput.value;
       if (pass !== confirm) { signupError.textContent = 'As senhas não coincidem.'; return; }
       auth.createUserWithEmailAndPassword(signupEmailInput.value.trim(), pass)
+        .then(function(cred) { sendVerification(cred.user); })
         .catch(function(err) { signupError.textContent = authErrorMessage(err); });
     });
   }
@@ -647,6 +660,7 @@
         for (var g = 0; g < games.length; g++) if (games[g].id === id) { game = games[g]; break; }
         if (!game) return;
         game.featured = !game.featured;
+        logHistory(game.featured ? 'feature' : 'unfeature', { game: game.name, gameId: game.id });
         saveGames();
         renderGames(searchInput.value);
         showToast(game.featured ? 'Adicionado aos destaques!' : 'Removido dos destaques');
@@ -671,7 +685,9 @@
         if (!isAdmin) return;
         var id = this.getAttribute('data-id');
         if (!confirm('Remover este jogo?')) return;
+        var removed = games.filter(function(g) { return g.id === id; })[0];
         games = games.filter(function(g) { return g.id !== id; });
+        if (removed) logHistory('remove', { game: removed.name, gameId: removed.id, detail: (removed.links ? removed.links.length : 0) + ' links' });
         saveGames();
         renderGames(searchInput.value);
         showToast('Jogo removido');
@@ -986,6 +1002,7 @@
         for (var gi = 0; gi < games.length; gi++) if (games[gi].id === fid) { g = games[gi]; break; }
         if (!g) return;
         g.featured = !g.featured;
+        logHistory(g.featured ? 'feature' : 'unfeature', { game: g.name, gameId: g.id });
         saveGames();
         detailsModalOverlay.classList.remove('active');
         renderGames(searchInput.value);
@@ -1085,6 +1102,7 @@
     else if (coverUrlInput.value.trim()) novaCapa = coverUrlInput.value.trim();
 
     game.cover = novaCapa;
+    logHistory('cover', { game: game.name, gameId: game.id });
     saveGames();
     renderGames(searchInput.value);
     closeCoverModal();
@@ -1098,6 +1116,7 @@
     for (var i = 0; i < games.length; i++) if (games[i].id === currentCoverGameId) { game = games[i]; break; }
     if (!game) return;
     game.cover = '';
+    logHistory('cover', { game: game.name, gameId: game.id, detail: 'removeu' });
     saveGames();
     renderGames(searchInput.value);
     closeCoverModal();
@@ -1230,6 +1249,7 @@
     else games = games.concat(validos);
     saveGames();
     renderGames(searchInput.value);
+    logHistory('import', { detail: validos.length + ' jogos' + (replaceAllCheckbox.checked ? ' (substituiu a coleção)' : '') });
     closeImportModal();
     showToast(validos.length + ' jogos importados' + (invalidos ? ' (' + invalidos + ' ignorados)' : ''));
   }
@@ -1278,6 +1298,7 @@
     });
     saveGames();
     renderGames(searchInput.value);
+    logHistory('add', { game: name, gameId: games[games.length - 1].id });
     closeModal();
     showToast('Jogo adicionado' + (gameFeaturedInput && gameFeaturedInput.checked ? ' aos destaques' : ''));
   });
@@ -1285,6 +1306,185 @@
   searchInput.addEventListener('input', function(e) { renderGames(e.target.value); });
   clearSearchBtn.addEventListener('click', function() {
     searchInput.value = ''; renderGames(''); searchInput.focus();
+  });
+
+  // ====== Verificação de email ======
+  // Admins entram sempre (evita trancar contas antigas); os demais precisam confirmar o email.
+  function setVerifyMsg(text, ok) {
+    verifyMsg.style.color = ok ? '#8aff9a' : '';
+    verifyMsg.textContent = text;
+  }
+
+  function startResendCooldown() {
+    var left = 60;
+    clearInterval(startResendCooldown._t);
+    verifyResendBtn.disabled = true;
+    verifyResendBtn.textContent = 'Reenviar em ' + left + 's';
+    startResendCooldown._t = setInterval(function() {
+      left--;
+      if (left <= 0) {
+        clearInterval(startResendCooldown._t);
+        verifyResendBtn.disabled = false;
+        verifyResendBtn.textContent = 'Reenviar email';
+      } else {
+        verifyResendBtn.textContent = 'Reenviar em ' + left + 's';
+      }
+    }, 1000);
+  }
+
+  function sendVerification(user) {
+    return user.sendEmailVerification()
+      .then(function() { setVerifyMsg('Email enviado! Olhe também a caixa de spam.', true); startResendCooldown(); })
+      .catch(function(err) { setVerifyMsg(authErrorMessage(err)); });
+  }
+
+  function showVerifyScreen(user) {
+    showAuthScreen();
+    verifyEmail.textContent = user.email || '';
+    authBox.classList.add('is-verify');
+  }
+
+  function registerUser(user) {
+    // Guarda o email no Firestore para o painel de admin conseguir listar as contas
+    if (!db) return;
+    db.collection('users').doc(user.uid).set({
+      email: user.email || '',
+      createdAt: Date.parse(user.metadata && user.metadata.creationTime) || Date.now(),
+      lastLogin: Date.now()
+    }, { merge: true }).catch(function(e) { console.warn('Não registrou usuário:', e); });
+  }
+
+  function handleUser(user) {
+    currentUser = user;
+    if (userEmailLabel) userEmailLabel.textContent = user.email || '';
+    var fresh = user.emailVerified ? Promise.resolve() :
+      user.reload().then(function() { return user.emailVerified ? user.getIdToken(true) : null; }).catch(function() {});
+    return fresh.then(function() { return checkAdminStatus(user.uid); }).then(function(admin) {
+      if (!admin && !user.emailVerified) { showVerifyScreen(user); return; }
+      isAdmin = admin;
+      authBox.classList.remove('is-verify');
+      setAdminUIVisible(isAdmin);
+      showAppScreen();
+      registerUser(user);
+      loadFavorites(function() {
+        loadGames(function() { renderGames(searchInput.value); });
+      });
+    });
+  }
+
+  verifyCheckBtn.addEventListener('click', function() {
+    var u = auth && auth.currentUser;
+    if (!u) return;
+    setVerifyMsg('');
+    handleUser(u).then(function() {
+      if (!u.emailVerified && !isAdmin) setVerifyMsg('Ainda não confirmado. Clique no link do email e tente de novo.');
+    });
+  });
+  verifyResendBtn.addEventListener('click', function() { if (auth && auth.currentUser) sendVerification(auth.currentUser); });
+  verifyLogoutBtn.addEventListener('click', function() { if (auth) auth.signOut(); });
+
+  // ====== Histórico de alterações ======
+  function logHistory(action, extra) {
+    if (!db || !currentUser) return;
+    var rec = { action: action, uid: currentUser.uid, email: currentUser.email || '', at: Date.now() };
+    for (var k in extra) if (extra[k] !== undefined && extra[k] !== null) rec[k] = String(extra[k]);
+    db.collection('history').add(rec).catch(function(e) { console.error('Histórico não salvo:', e); });
+  }
+
+  var ACTION_LABELS = {
+    add: 'adicionou', remove: 'removeu', import: 'importou', feature: 'destacou',
+    unfeature: 'tirou dos destaques', cover: 'trocou a capa de',
+    promote: 'promoveu a admin', demote: 'removeu de admin'
+  };
+
+  function loadHistory() {
+    admHistoryList.innerHTML = '<p class="help-text">Carregando...</p>';
+    db.collection('history').orderBy('at', 'desc').limit(100).get().then(function(snap) {
+      if (snap.empty) { admHistoryList.innerHTML = '<p class="help-text">Nenhuma alteração registrada ainda.</p>'; return; }
+      var html = '';
+      snap.forEach(function(doc) {
+        var r = doc.data();
+        var target = r.game || r.detail || '';
+        var extra = (r.game && r.detail) ? ' <span class="adm-date">(' + escapeHtml(r.detail) + ')</span>' : '';
+        var when = new Date(r.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        html += '<div class="adm-row hist"><div class="adm-what"><b>' + escapeHtml(r.email) + '</b> ' +
+                escapeHtml(ACTION_LABELS[r.action] || r.action) + ' <b>' + escapeHtml(target) + '</b>' + extra +
+                '</div><span class="adm-date">' + escapeHtml(when) + '</span></div>';
+      });
+      admHistoryList.innerHTML = html;
+    }).catch(function(e) {
+      admHistoryList.innerHTML = '<p class="help-text">Não foi possível ler o histórico (' + escapeHtml(e && e.code ? e.code : 'erro') + '). Confira as regras do Firestore.</p>';
+    });
+  }
+
+  // ====== Painel de administradores ======
+  function loadAdminUsers() {
+    admUsersList.innerHTML = '<p class="help-text">Carregando...</p>';
+    Promise.all([db.collection('users').get(), db.collection('admins').get()]).then(function(res) {
+      var adminIds = {};
+      res[1].forEach(function(d) { adminIds[d.id] = true; });
+      var users = [];
+      res[0].forEach(function(d) { users.push({ uid: d.id, email: d.data().email || d.id, admin: !!adminIds[d.id] }); });
+      Object.keys(adminIds).forEach(function(id) {
+        if (!users.some(function(u) { return u.uid === id; })) users.push({ uid: id, email: 'Admin sem email registrado (' + id.slice(0, 6) + '…)', admin: true });
+      });
+      users.sort(function(a, b) { return (b.admin - a.admin) || a.email.localeCompare(b.email); });
+      var html = '';
+      users.forEach(function(u) {
+        var me = currentUser && u.uid === currentUser.uid;
+        html += '<div class="adm-row"><div class="adm-email"><span class="adm-email-text">' + escapeHtml(u.email) + '</span>' +
+                (me ? '<span class="adm-date">você</span>' : '') +
+                (u.admin ? '<span class="admin-pill" style="display:inline-flex;">ADMIN</span>' : '') + '</div>' +
+                (me ? '' : '<button type="button" class="btn-secondary adm-btn" data-adm-uid="' + escapeAttr(u.uid) + '" data-adm-email="' + escapeAttr(u.email) + '" data-adm-admin="' + (u.admin ? '1' : '0') + '">' +
+                  (u.admin ? 'Remover admin' : 'Promover') + '</button>') + '</div>';
+      });
+      admUsersList.innerHTML = html || '<p class="help-text">Nenhuma conta registrada ainda.</p>';
+    }).catch(function(e) {
+      admUsersList.innerHTML = '<p class="help-text">Não foi possível ler as contas (' + escapeHtml(e && e.code ? e.code : 'erro') + '). Confira as regras do Firestore.</p>';
+    });
+  }
+
+  function setUserAdmin(uid, email, makeAdmin) {
+    if (!isAdmin) return;
+    var msg = makeAdmin ? 'Promover ' + email + ' a administrador?\nEssa pessoa poderá adicionar, remover e editar jogos e promover outros admins.'
+                        : 'Remover o acesso de administrador de ' + email + '?';
+    if (!confirm(msg)) return;
+    var ref = db.collection('admins').doc(uid);
+    var p = makeAdmin ? ref.set({ email: email, promotedBy: currentUser.email || '', at: Date.now() }) : ref.delete();
+    p.then(function() {
+      logHistory(makeAdmin ? 'promote' : 'demote', { detail: email });
+      showToast(makeAdmin ? 'Administrador adicionado' : 'Administrador removido');
+      loadAdminUsers();
+    }).catch(function(e) {
+      showToast('Não foi possível alterar (' + (e && e.code ? e.code : 'erro') + ')', true);
+    });
+  }
+
+  function showAdmTab(tab) {
+    var tabs = document.querySelectorAll('.adm-tab');
+    for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', tabs[i].getAttribute('data-adm-tab') === tab);
+    admUsersList.style.display = tab === 'admins' ? '' : 'none';
+    admHistoryList.style.display = tab === 'history' ? '' : 'none';
+    admHelp.style.display = tab === 'admins' ? '' : 'none';
+    if (tab === 'admins') loadAdminUsers(); else loadHistory();
+  }
+
+  adminPanelBtn.addEventListener('click', function() {
+    if (!isAdmin || !db) return;
+    adminModalOverlay.classList.add('active');
+    showAdmTab('admins');
+  });
+  closeAdminBtn.addEventListener('click', function() { adminModalOverlay.classList.remove('active'); });
+  adminModalOverlay.addEventListener('click', function(e) { if (e.target === adminModalOverlay) adminModalOverlay.classList.remove('active'); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') adminModalOverlay.classList.remove('active'); });
+  var admTabEls = document.querySelectorAll('.adm-tab');
+  for (var ati = 0; ati < admTabEls.length; ati++) {
+    admTabEls[ati].addEventListener('click', function() { showAdmTab(this.getAttribute('data-adm-tab')); });
+  }
+  admUsersList.addEventListener('click', function(e) {
+    var b = e.target.closest('[data-adm-uid]');
+    if (!b) return;
+    setUserAdmin(b.getAttribute('data-adm-uid'), b.getAttribute('data-adm-email'), b.getAttribute('data-adm-admin') !== '1');
   });
 
   function init() {
@@ -1298,17 +1498,9 @@
     }
     auth.onAuthStateChanged(function(user) {
       if (user) {
-        currentUser = user;
-        if (userEmailLabel) userEmailLabel.textContent = user.email || '';
-        checkAdminStatus(user.uid).then(function(admin) {
-          isAdmin = admin;
-          setAdminUIVisible(isAdmin);
-          showAppScreen();
-          loadFavorites(function() {
-            loadGames(function() { renderGames(searchInput.value); });
-          });
-        });
+        handleUser(user);
       } else {
+        authBox.classList.remove('is-verify');
         currentUser = null;
         isAdmin = false;
         games = [];

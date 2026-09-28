@@ -820,3 +820,48 @@ body.authenticated #authOverlay { display: none; }
   html body .modal-overlay.active .modal .icon-btn { width: 26px !important; height: 26px !important; font-size: 0.68rem !important; }
   html body .modal-overlay.active .modal .modal-actions button { font-size: 0.74rem !important; padding: 0.65rem 0.3rem !important; }
 }
+
+/* ============ VERIFICAÇÃO DE EMAIL ============ */
+.verify-panel { display: none; flex-direction: column; text-align: center; }
+.auth-box.is-verify .verify-panel { display: flex; }
+.auth-box.is-verify .auth-tabs,
+.auth-box.is-verify .auth-hint,
+.auth-box.is-verify #loginForm,
+.auth-box.is-verify #signupForm { display: none !important; }
+.verify-title { font-family: 'Bebas Neue', sans-serif; font-size: 1.7rem; font-weight: 400; letter-spacing: 1px; color: #fdfdfe; }
+.verify-text { color: var(--zenkai-silver-dim); font-size: 0.92rem; line-height: 1.45; margin: 0.5rem 0 1rem; }
+.verify-text strong { color: #fff; word-break: break-all; }
+.verify-panel .btn-secondary { justify-content: center; margin-top: 0.6rem; }
+.verify-panel .btn-secondary:disabled { opacity: 0.55; cursor: default; }
+
+/* ============ PAINEL DE ADMINISTRAÇÃO ============ */
+.adm-tabs {
+  display: flex; gap: 0.4rem;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--zenkai-gray);
+  border-radius: var(--radius-pill); padding: 0.3rem; margin: 0.6rem 0 1rem;
+}
+.adm-tab {
+  flex: 1; background: transparent; border: none; padding: 0.55rem 0.5rem;
+  border-radius: var(--radius-pill); color: var(--zenkai-silver-dim);
+  font-weight: 600; font-size: 0.88rem; cursor: pointer; font-family: 'Rajdhani', sans-serif;
+  transition: background 0.15s, color 0.15s;
+}
+.adm-tab.active { background: var(--zenkai-red); color: #fff; }
+.adm-list { display: flex; flex-direction: column; gap: 0.5rem; max-height: 50vh; overflow-y: auto; }
+.adm-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.8rem;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--zenkai-gray);
+  border-radius: var(--radius-md); padding: 0.65rem 0.9rem;
+}
+.adm-email { display: flex; align-items: center; gap: 0.5rem; min-width: 0; flex: 1; font-weight: 600; color: #f0f0f3; }
+.adm-email-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.adm-btn { padding: 0.45rem 0.9rem; font-size: 0.8rem; flex-shrink: 0; }
+.adm-date { font-size: 0.72rem; color: var(--zenkai-silver-dim); flex-shrink: 0; font-weight: 600; }
+.adm-row.hist { align-items: flex-start; font-size: 0.86rem; color: var(--zenkai-silver); }
+.adm-what { min-width: 0; overflow-wrap: anywhere; line-height: 1.4; }
+.adm-what b { color: #fff; font-weight: 600; }
+@media screen and (max-width: 768px) {
+  html body .modal-overlay.active .modal .adm-list { flex: 1 1 auto !important; min-height: 0 !important; max-height: none !important; overflow-y: auto !important; }
+  html body .modal-overlay.active .modal .adm-tabs { flex: 0 0 auto !important; }
+  html body .modal-overlay.active .modal .adm-btn { flex: 0 0 auto !important; width: auto !important; padding: 0.45rem 0.7rem !important; }
+}

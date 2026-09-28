@@ -46,7 +46,7 @@
 
 <!-- Tela de login / cadastro -->
 <div class="auth-overlay" id="authOverlay">
-  <div class="auth-box">
+  <div class="auth-box" id="authBox">
     <div class="logo-area" style="justify-content:center;margin-bottom:1.5rem;">
       <img
         src="https://cdn.jsdelivr.net/gh/kaikyalves41s-sys/capas-jogos@main/logo-zenkai.png"
@@ -92,6 +92,15 @@
       <button type="submit" class="btn btn-primary auth-submit">Criar conta</button>
     </form>
 
+    <div id="verifyPanel" class="verify-panel">
+      <h3 class="verify-title">Confirme seu email</h3>
+      <p class="verify-text">Enviamos um link de confirmação para <strong id="verifyEmail"></strong>. Abra o email, clique no link e volte aqui.</p>
+      <p class="auth-error" id="verifyMsg"></p>
+      <button type="button" class="btn btn-primary auth-submit" id="verifyCheckBtn">Já confirmei</button>
+      <button type="button" class="btn-secondary auth-submit" id="verifyResendBtn">Reenviar email</button>
+      <button type="button" class="auth-link" id="verifyLogoutBtn">Sair</button>
+    </div>
+
     <p class="auth-hint">Contas criadas por aqui só podem visualizar a coleção.</p>
   </div>
 </div>
@@ -128,6 +137,9 @@
       </button>
       <button class="icon-action" id="importBtn" data-admin-only="1" title="Importar backup" aria-label="Importar backup">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M6.5 9.5L12 15l5.5-5.5"/><path d="M4 20h16"/></svg>
+      </button>
+      <button class="icon-action" id="adminPanelBtn" data-admin-only="1" title="Administração" aria-label="Administração">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z"/></svg>
       </button>
       <button class="btn btn-primary" id="openModalBtn" data-admin-only="1">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -246,6 +258,23 @@
       <button type="button" class="btn-danger" id="removeCoverBtn">Remover capa</button>
       <button type="button" class="btn-secondary" id="closeCoverBtn">Cancelar</button>
       <button type="button" class="btn-save" id="saveCoverBtn">Salvar capa</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de administração (admins + histórico) -->
+<div class="modal-overlay" id="adminModalOverlay">
+  <div class="modal">
+    <h2>Administração</h2>
+    <div class="adm-tabs">
+      <button type="button" class="adm-tab active" data-adm-tab="admins">Administradores</button>
+      <button type="button" class="adm-tab" data-adm-tab="history">Histórico</button>
+    </div>
+    <p class="help-text" id="admHelp">Aparecem aqui as contas que já entraram no site. Quem for promovido passa a poder adicionar, remover e editar jogos.</p>
+    <div class="adm-list" id="admUsersList"></div>
+    <div class="adm-list" id="admHistoryList" style="display:none;"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn-secondary" id="closeAdminBtn">Fechar</button>
     </div>
   </div>
 </div>
