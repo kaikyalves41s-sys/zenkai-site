@@ -159,6 +159,10 @@
   var gamePasswordInput   = document.getElementById('gamePassword');
   var gameLinksInput      = document.getElementById('gameLinks');
   var gameFeaturedInput   = document.getElementById('gameFeatured');
+  var gameModalTitle      = document.getElementById('gameModalTitle');
+  var gameSaveBtn         = document.getElementById('gameSaveBtn');
+  var editingGameId       = null;
+  var editingKeepCover    = false;
   var navLinksEls         = document.querySelectorAll('.nav-link');
 
   var importJsonTextarea  = document.getElementById('importJson');
@@ -225,6 +229,7 @@
     alert: '<path d="M12 3.2l9.5 17H2.5z"/><line x1="12" y1="9.5" x2="12" y2="14"/><line x1="12" y1="16.8" x2="12" y2="16.9"/>',
     heart: '<path d="M12 20.5c-.3 0-.6-.1-.8-.3C7.8 17 3 12.9 3 8.8 3 6 5.2 3.8 8 3.8c1.5 0 2.9.7 3.8 1.8.9-1.1 2.3-1.8 3.8-1.8 2.8 0 5 2.2 5 5 0 4.1-4.8 8.2-8.2 11.4-.2.2-.5.3-.8.3z"/>'
   };
+  ICON_PATHS.edit = '<path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17z"/><path d="M13.5 8.5l3 3"/>';
   function icon(name, size) {
     size = size || 16;
     var p = ICON_PATHS[name];
@@ -1038,6 +1043,7 @@
     html +=   '<button type="button" class="btn-secondary" data-toggle-fav="' + escapeAttr(game.id) + '">' + icon('heart', 15) + '<span>' + favLabel + '</span></button>';
     if (isAdmin) {
       html +=   '<button type="button" class="btn-secondary" data-toggle-feature="' + escapeAttr(game.id) + '">' + icon('star', 15) + '<span>' + featureLabel + '</span></button>';
+      html +=   '<button type="button" class="btn-secondary" data-edit-game="' + escapeAttr(game.id) + '">' + icon('edit', 15) + '<span>Editar</span></button>';
       html +=   '<button type="button" class="btn-secondary" data-edit-cover="' + escapeAttr(game.id) + '">' + icon('camera', 15) + '<span>Trocar capa</span></button>';
     }
     html +=   '<button type="button" class="btn-secondary" id="closeDetailsBtn">Fechar</button>';
@@ -1055,6 +1061,14 @@
         if (!isAdmin) return;
         detailsModalOverlay.classList.remove('active');
         openCoverModal(this.getAttribute('data-edit-cover'));
+      });
+    }
+    var editGameBtn = detailsModal.querySelector('[data-edit-game]');
+    if (editGameBtn) {
+      editGameBtn.addEventListener('click', function() {
+        if (!isAdmin) return;
+        detailsModalOverlay.classList.remove('active');
+        openEditModal(this.getAttribute('data-edit-game'));
       });
     }
     var toggleFavBtn = detailsModal.querySelector('[data-toggle-fav]');
@@ -1216,12 +1230,45 @@
     if (e.target === coverModalOverlay) closeCoverModal();
   });
 
+  function setGameModalMode(editing) {
+    gameModalTitle.textContent = editing ? 'Editar jogo' : 'Novo jogo';
+    gameSaveBtn.textContent = editing ? 'Salvar alterações' : 'Salvar';
+    gameCoverInput.placeholder = 'Ex: capas/tlou2.jpg  ou  https://...';
+  }
   function openModal() {
+    editingGameId = null;
+    editingKeepCover = false;
     modalOverlay.classList.add('active');
     gameForm.reset();
+    setGameModalMode(false);
     setTimeout(function() { gameNameInput.focus(); }, 100);
   }
-  function closeModal() { modalOverlay.classList.remove('active'); gameForm.reset(); }
+  function openEditModal(id) {
+    var game = null;
+    for (var i = 0; i < games.length; i++) if (games[i].id === id) { game = games[i]; break; }
+    if (!game) return;
+    editingGameId = id;
+    modalOverlay.classList.add('active');
+    gameForm.reset();
+    setGameModalMode(true);
+    gameNameInput.value = game.name || '';
+    gameVersionInput.value = game.version || '';
+    gamePasswordInput.value = game.password || '';
+    gameFeaturedInput.checked = !!game.featured;
+    gameLinksInput.value = (game.links || []).map(function(l) { return (l.label || 'Link') + ' ⇒ ' + l.url; }).join('\n');
+    // Capa enviada do computador (data:) é enorme para mostrar no campo: deixa vazio e mantém a atual
+    editingKeepCover = !!(game.cover && game.cover.indexOf('data:') === 0);
+    gameCoverInput.value = editingKeepCover ? '' : (game.cover || '');
+    if (editingKeepCover) gameCoverInput.placeholder = 'Capa enviada do computador — deixe vazio para manter';
+    setTimeout(function() { gameNameInput.focus(); }, 100);
+  }
+  function closeModal() {
+    modalOverlay.classList.remove('active');
+    gameForm.reset();
+    editingGameId = null;
+    editingKeepCover = false;
+    setGameModalMode(false);
+  }
   function openImportModal() {
     importModalOverlay.classList.add('active');
     importJsonTextarea.value = '';
@@ -1235,6 +1282,8 @@
   }
 
   function findSeparatorIndex(line) {
+    var arrow = line.indexOf('⇒');
+    if (arrow !== -1) return { index: arrow, length: 1 };
     // Símbolos claros de separação (nome ⇒ link, nome -> link, nome => link, travessão, pipe)
     var symbolMatch = line.match(/⇒|=>|->|—|–|\|/);
     if (symbolMatch) return { index: symbolMatch.index, length: symbolMatch[0].length };
@@ -1381,6 +1430,31 @@
     var links = parseLinks(linksText);
     if (links.length === 0) { showToast('Nenhum link válido encontrado', true); return; }
 
+    if (editingGameId) {
+      var target = null;
+      for (var ei = 0; ei < games.length; ei++) if (games[ei].id === editingGameId) { target = games[ei]; break; }
+      if (!target) { showToast('Jogo não encontrado (talvez tenha sido removido)', true); closeModal(); return; }
+      var newCover = (!cover && editingKeepCover) ? target.cover : cover;
+      var newFeatured = gameFeaturedInput.checked;
+      var changes = [];
+      if (target.name !== name) changes.push('nome (era "' + target.name + '")');
+      if ((target.version || '') !== version) changes.push('versão');
+      if ((target.cover || '') !== newCover) changes.push('capa');
+      if ((target.password || '') !== password) changes.push('senha');
+      if (JSON.stringify(target.links || []) !== JSON.stringify(links)) changes.push('links');
+      if (!!target.featured !== newFeatured) changes.push('destaque');
+      if (changes.length === 0) { closeModal(); showToast('Nada foi alterado'); return; }
+      var editedId = target.id;
+      target.name = name; target.version = version; target.cover = newCover;
+      target.password = password; target.links = links; target.featured = newFeatured;
+      logHistory('edit', { game: name, gameId: editedId, detail: changes.join(', ') });
+      saveGame(target);
+      renderGames(searchInput.value);
+      closeModal();
+      showToast('Jogo atualizado');
+      return;
+    }
+
     games.push({
       id: generateId(),
       name: name, version: version, cover: cover, password: password, links: links,
@@ -1484,7 +1558,7 @@
 
   var ACTION_LABELS = {
     add: 'adicionou', remove: 'removeu', import: 'importou', feature: 'destacou',
-    unfeature: 'tirou dos destaques', cover: 'trocou a capa de',
+    unfeature: 'tirou dos destaques', cover: 'trocou a capa de', edit: 'editou',
     promote: 'promoveu a admin', demote: 'removeu de admin'
   };
 
