@@ -255,6 +255,27 @@ body.authenticated #authOverlay { display: none; }
 
 .counter { font-size:0.85rem; color: var(--zenkai-silver-dim); margin-bottom:2.25rem; padding-left:0.5rem; }
 
+/* ============ FILTROS (ORDENAR / REGIÃO) ============ */
+.filters-row {
+  display:flex; flex-wrap:wrap; gap:0.9rem;
+  margin: -0.3rem 0 1rem; padding-left:0.5rem;
+}
+.filter-field { display:flex; align-items:center; gap:0.5rem; }
+.filter-field label { font-size:0.8rem; color: var(--zenkai-silver-dim); white-space:nowrap; }
+.filter-field select {
+  background: rgba(255,255,255,0.03);
+  border:1px solid var(--zenkai-gray);
+  color: var(--zenkai-silver);
+  padding: 0.45rem 0.7rem;
+  border-radius: var(--radius-pill);
+  font-size:0.85rem; font-family:'Rajdhani', sans-serif; font-weight:600;
+  cursor:pointer; outline:none;
+  transition: border-color 0.15s, color 0.15s;
+}
+.filter-field select:hover, .filter-field select:focus { border-color: var(--zenkai-red); color:#fff; }
+.filter-field select option { background: #16161a; color:#fff; }
+
+
 /* ============ COVER FLOW (LEQUE) ============ */
 .featured-section {
   margin-bottom: 3rem;
