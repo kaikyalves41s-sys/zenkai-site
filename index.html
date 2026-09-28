@@ -8,6 +8,35 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+
+<!-- PWA: permite instalar o ZENKAI como app no celular/computador -->
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#e11d2e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ZENKAI">
+<link rel="apple-touch-icon" href="https://cdn.jsdelivr.net/gh/kaikyalves41s-sys/capas-jogos@main/logo-zenkai.png">
+
+<!-- Estilo extra do botão de favorito (não depende do style.css original) -->
+<style>
+  .btn-fav {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #c8c8d0;
+    border-radius: 8px;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  .btn-fav:hover { border-color: #e11d2e; color: #ff8a96; }
+  .btn-fav.is-active { background: rgba(225,29,46,0.15); border-color: #e11d2e; color: #ff3b52; }
+  .btn-fav.is-active svg { fill: #ff3b52; }
+</style>
+
 <!-- Firebase: guarda os jogos na nuvem para acessar de qualquer dispositivo -->
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
@@ -86,6 +115,10 @@
       <a href="#colecaoSection" class="nav-link" data-nav="colecao">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg>
         <span>Coleção</span>
+      </a>
+      <a href="#favoritosSection" class="nav-link" data-nav="favoritos">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.5c-.3 0-.6-.1-.8-.3C7.8 17 3 12.9 3 8.8 3 6 5.2 3.8 8 3.8c1.5 0 2.9.7 3.8 1.8.9-1.1 2.3-1.8 3.8-1.8 2.8 0 5 2.2 5 5 0 4.1-4.8 8.2-8.2 11.4-.2.2-.5.3-.8.3z"/></svg>
+        <span>Favoritos</span>
       </a>
     </nav>
 
