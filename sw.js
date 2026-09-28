@@ -3,7 +3,7 @@
 // Não intercepta chamadas ao Firebase: a lista de jogos e favoritos
 // sempre vem da nuvem quando há conexão.
 
-var CACHE_NAME = 'zenkai-cache-v1';
+var CACHE_NAME = 'zenkai-cache-v2';
 var ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -44,17 +44,17 @@ self.addEventListener('fetch', function(event) {
     return;
   }
 
+  // Rede primeiro: sempre tenta pegar a versão mais nova do arquivo.
+  // Só usa o cache quando estiver sem internet.
   event.respondWith(
-    caches.match(req).then(function(cached) {
-      var networkFetch = fetch(req).then(function(res) {
-        if (res && res.status === 200 && res.type === 'basic') {
-          var resClone = res.clone();
-          caches.open(CACHE_NAME).then(function(cache) { cache.put(req, resClone); });
-        }
-        return res;
-      }).catch(function() { return cached; });
-
-      return cached || networkFetch;
+    fetch(req).then(function(res) {
+      if (res && res.status === 200 && res.type === 'basic') {
+        var resClone = res.clone();
+        caches.open(CACHE_NAME).then(function(cache) { cache.put(req, resClone); });
+      }
+      return res;
+    }).catch(function() {
+      return caches.match(req);
     })
   );
 });
