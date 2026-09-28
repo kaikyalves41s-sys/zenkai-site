@@ -35,6 +35,10 @@
   var currentUser = null;
   var isAdmin = false;
 
+  // ====== Favoritos pessoais (cada usuário logado tem os seus) ======
+  var FAVORITES_STORAGE_PREFIX = 'zenkai_favs_';
+  var favorites = [];
+
   var DEFAULT_GAMES = [
     {
       name: "Spider-Man 1", version: "CUSA02299 – USA", featured: true,
@@ -204,7 +208,8 @@
     controller: '<rect x="2.5" y="8" width="19" height="9.5" rx="4.5"/><line x1="7" y1="10.5" x2="7" y2="14.5"/><line x1="5" y1="12.5" x2="9" y2="12.5"/><circle cx="16.2" cy="11.2" r="1"/><circle cx="18.2" cy="13.6" r="1"/>',
     search: '<circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>',
     check: '<polyline points="20 6.5 9.5 17 4.5 12.2"/>',
-    alert: '<path d="M12 3.2l9.5 17H2.5z"/><line x1="12" y1="9.5" x2="12" y2="14"/><line x1="12" y1="16.8" x2="12" y2="16.9"/>'
+    alert: '<path d="M12 3.2l9.5 17H2.5z"/><line x1="12" y1="9.5" x2="12" y2="14"/><line x1="12" y1="16.8" x2="12" y2="16.9"/>',
+    heart: '<path d="M12 20.5c-.3 0-.6-.1-.8-.3C7.8 17 3 12.9 3 8.8 3 6 5.2 3.8 8 3.8c1.5 0 2.9.7 3.8 1.8.9-1.1 2.3-1.8 3.8-1.8 2.8 0 5 2.2 5 5 0 4.1-4.8 8.2-8.2 11.4-.2.2-.5.3-.8.3z"/>'
   };
   function icon(name, size) {
     size = size || 16;
@@ -393,6 +398,89 @@
     }
   }
 
+  function favKey() {
+    return FAVORITES_STORAGE_PREFIX + (currentUser ? currentUser.uid : 'local');
+  }
+
+  function isFavorite(id) {
+    return favorites.indexOf(id) !== -1;
+  }
+
+  function loadFavorites(onReady) {
+    favorites = [];
+    try {
+      var raw = localStorage.getItem(favKey());
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) favorites = parsed;
+      }
+    } catch (e) {
+      console.error('loadFavorites (cache local) erro:', e);
+    }
+
+    if (onReady) onReady();
+
+    if (db && currentUser) {
+      db.collection('favorites').doc(currentUser.uid).get().then(function(doc) {
+        if (doc.exists && Array.isArray(doc.data().list)) {
+          favorites = doc.data().list;
+          try { localStorage.setItem(favKey(), JSON.stringify(favorites)); } catch (e) {}
+          if (onReady) onReady();
+        }
+      }).catch(function(e) {
+        console.error('Erro ao carregar favoritos da nuvem:', e);
+      });
+    }
+  }
+
+  function saveFavorites() {
+    try { localStorage.setItem(favKey(), JSON.stringify(favorites)); } catch (e) {}
+    if (db && currentUser) {
+      db.collection('favorites').doc(currentUser.uid).set({ list: favorites, updatedAt: Date.now() })
+        .catch(function(e) { console.error('Erro ao salvar favoritos na nuvem:', e); });
+    }
+  }
+
+  function toggleFavorite(id) {
+    var idx = favorites.indexOf(id);
+    if (idx === -1) { favorites.push(id); saveFavorites(); return true; }
+    favorites.splice(idx, 1);
+    saveFavorites();
+    return false;
+  }
+
+  function buildGameCardHtml(game) {
+    var coverUrl = (game.cover && game.cover.trim()) ? game.cover : FALLBACK_COVER;
+    var safeName = escapeHtml(game.name);
+    var safeCover = escapeAttr(coverUrl);
+    var qtdLinks = game.links ? game.links.length : 0;
+    var fav = isFavorite(game.id);
+
+    var html = '';
+    html += '<div class="game-card" data-id="' + escapeAttr(game.id) + '">';
+    html +=   '<div class="card-cover"' + (isAdmin ? ' data-cover-for="' + escapeAttr(game.id) + '" title="Clique para trocar a capa"' : '') + '>';
+    html +=     '<img src="' + safeCover + '" alt="Capa de ' + safeName + '" ' +
+                     'onerror="this.onerror=null;this.src=\'' + FALLBACK_COVER + '\'">';
+    if (isAdmin) html +=     '<div class="overlay-cover">' + icon('camera', 22) + '<span>Trocar capa</span></div>';
+    if (game.featured) html += '<span class="card-badge card-badge-featured">' + icon('star', 12) + '<span>Destaque</span></span>';
+    html +=     '<span class="card-badge">' + icon('folder', 12) + qtdLinks + (qtdLinks === 1 ? ' link' : ' links') + '</span>';
+    html +=   '</div>';
+    html +=   '<div class="card-info">';
+    html +=     '<h3 title="' + safeName + '">' + safeName + '</h3>';
+    if (game.version) html += '<div class="card-meta">' + icon('disc', 13) + escapeHtml(game.version) + '</div>';
+    html +=     '<div class="card-actions">';
+    html +=       '<button class="btn-open" data-id="' + escapeAttr(game.id) + '">' + icon('folder', 15) + '<span>Ver links</span></button>';
+    html +=       '<button class="btn-fav' + (fav ? ' is-active' : '') + '" data-id="' + escapeAttr(game.id) + '" title="' + (fav ? 'Remover dos favoritos' : 'Adicionar aos favoritos') + '">' + icon('heart', 15) + '</button>';
+    if (isAdmin) {
+      html +=       '<button class="btn-star' + (game.featured ? ' is-active' : '') + '" data-id="' + escapeAttr(game.id) + '" title="' + (game.featured ? 'Remover dos destaques' : 'Adicionar aos destaques') + '">' + icon('star', 15) + '</button>';
+      html +=       '<button class="btn-delete" data-id="' + escapeAttr(game.id) + '" title="Remover">' + icon('trash', 15) + '</button>';
+    }
+    html +=     '</div>';
+    html +=   '</div>';
+    html += '</div>';
+    return html;
+  }
+
   function renderGames(filter) {
     filter = filter || '';
     var term = filter.trim().toLowerCase();
@@ -483,40 +571,36 @@
 
     if (colecaoList.length > 0) {
       html +=   '<div class="carousel" id="carousel-main">';
-
-      colecaoList.forEach(function(game) {
-        var coverUrl = (game.cover && game.cover.trim()) ? game.cover : FALLBACK_COVER;
-        var safeName = escapeHtml(game.name);
-        var safeCover = escapeAttr(coverUrl);
-        var qtdLinks = game.links ? game.links.length : 0;
-
-        html += '<div class="game-card" data-id="' + escapeAttr(game.id) + '">';
-        html +=   '<div class="card-cover"' + (isAdmin ? ' data-cover-for="' + escapeAttr(game.id) + '" title="Clique para trocar a capa"' : '') + '>';
-        html +=     '<img src="' + safeCover + '" alt="Capa de ' + safeName + '" ' +
-                         'onerror="this.onerror=null;this.src=\'' + FALLBACK_COVER + '\'">';
-        if (isAdmin) html +=     '<div class="overlay-cover">' + icon('camera', 22) + '<span>Trocar capa</span></div>';
-        if (game.featured) html += '<span class="card-badge card-badge-featured">' + icon('star', 12) + '<span>Destaque</span></span>';
-        html +=     '<span class="card-badge">' + icon('folder', 12) + qtdLinks + (qtdLinks === 1 ? ' link' : ' links') + '</span>';
-        html +=   '</div>';
-        html +=   '<div class="card-info">';
-        html +=     '<h3 title="' + safeName + '">' + safeName + '</h3>';
-        if (game.version) html += '<div class="card-meta">' + icon('disc', 13) + escapeHtml(game.version) + '</div>';
-        html +=     '<div class="card-actions">';
-        html +=       '<button class="btn-open" data-id="' + escapeAttr(game.id) + '">' + icon('folder', 15) + '<span>Ver links</span></button>';
-        if (isAdmin) {
-          html +=       '<button class="btn-star' + (game.featured ? ' is-active' : '') + '" data-id="' + escapeAttr(game.id) + '" title="' + (game.featured ? 'Remover dos destaques' : 'Adicionar aos destaques') + '">' + icon('star', 15) + '</button>';
-          html +=       '<button class="btn-delete" data-id="' + escapeAttr(game.id) + '" title="Remover">' + icon('trash', 15) + '</button>';
-        }
-        html +=     '</div>';
-        html +=   '</div>';
-        html += '</div>';
-      });
-
+      colecaoList.forEach(function(game) { html += buildGameCardHtml(game); });
       html +=   '</div>';
     } else {
       html += '<div class="empty-state" style="padding:2.5rem 1.5rem;">' + icon('grid', 36) +
               '<h2 style="font-size:1.05rem;">Nenhum jogo na coleção</h2>' +
               '<p>Todos os seus jogos estão em destaque no momento.</p></div>';
+    }
+    html += '</section>';
+
+    var favoritosList = filtered.filter(function(g) { return isFavorite(g.id); });
+
+    html += '<section class="carousel-section tab-section" id="favoritosSection">';
+    html +=   '<div class="carousel-header">';
+    html +=     '<h2 class="carousel-title">' + icon('heart', 18) + '<span>Favoritos</span> <span class="count-pill">' + favoritosList.length + '</span></h2>';
+    if (favoritosList.length > 0) {
+      html +=     '<div class="carousel-nav">';
+      html +=       '<button class="nav-arrow" data-dir="prev" data-target="favoritos">‹</button>';
+      html +=       '<button class="nav-arrow" data-dir="next" data-target="favoritos">›</button>';
+      html +=     '</div>';
+    }
+    html +=   '</div>';
+
+    if (favoritosList.length > 0) {
+      html +=   '<div class="carousel" id="carousel-favoritos">';
+      favoritosList.forEach(function(game) { html += buildGameCardHtml(game); });
+      html +=   '</div>';
+    } else {
+      html += '<div class="empty-state" style="padding:2.5rem 1.5rem;">' + icon('heart', 36) +
+              '<h2 style="font-size:1.05rem;">Nenhum favorito ainda</h2>' +
+              '<p>Clique no coração de um jogo para guardá-lo aqui.</p></div>';
     }
     html += '</section>';
 
@@ -562,6 +646,17 @@
         saveGames();
         renderGames(searchInput.value);
         showToast(game.featured ? 'Adicionado aos destaques!' : 'Removido dos destaques');
+      });
+    }
+
+    var favBtns = carouselsContainer.querySelectorAll('.btn-fav');
+    for (var f = 0; f < favBtns.length; f++) {
+      favBtns[f].addEventListener('click', function(e) {
+        e.stopPropagation();
+        var id = this.getAttribute('data-id');
+        var nowFav = toggleFavorite(id);
+        renderGames(searchInput.value);
+        showToast(nowFav ? 'Adicionado aos favoritos!' : 'Removido dos favoritos');
       });
     }
 
@@ -724,12 +819,18 @@
       });
     }
 
-    var carousel = document.getElementById('carousel-main');
-    if (!carousel) return;
+    var carouselEls = carouselsContainer.querySelectorAll('.carousel');
+    for (var ce = 0; ce < carouselEls.length; ce++) {
+      setupSingleCarouselBehavior(carouselEls[ce]);
+    }
+  }
+
+  function setupSingleCarouselBehavior(carousel) {
+    var target = carousel.id.replace('carousel-', '');
 
     function updateArrows() {
-      var prevBtn = document.querySelector('.nav-arrow[data-dir="prev"]');
-      var nextBtn = document.querySelector('.nav-arrow[data-dir="next"]');
+      var prevBtn = carouselsContainer.querySelector('.nav-arrow[data-dir="prev"][data-target="' + target + '"]');
+      var nextBtn = carouselsContainer.querySelector('.nav-arrow[data-dir="next"][data-target="' + target + '"]');
       if (!prevBtn || !nextBtn) return;
       var atStart = carousel.scrollLeft <= 5;
       var atEnd = carousel.scrollLeft + carousel.clientWidth >= carousel.scrollWidth - 5;
@@ -768,8 +869,10 @@
   function applyActiveTab() {
     var destaqueSection = document.getElementById('destaqueSection');
     var colecaoSection  = document.getElementById('colecaoSection');
+    var favoritosSection = document.getElementById('favoritosSection');
     if (destaqueSection) destaqueSection.classList.toggle('tab-hidden', activeTab !== 'destaque');
     if (colecaoSection)  colecaoSection.classList.toggle('tab-hidden', activeTab !== 'colecao');
+    if (favoritosSection) favoritosSection.classList.toggle('tab-hidden', activeTab !== 'favoritos');
     for (var i = 0; i < navLinksEls.length; i++) {
       navLinksEls[i].classList.toggle('active', navLinksEls[i].getAttribute('data-nav') === activeTab);
     }
@@ -779,7 +882,7 @@
     navLinksEls[navI].addEventListener('click', function(e) {
       e.preventDefault();
       var target = this.getAttribute('data-nav');
-      if (target !== 'destaque' && target !== 'colecao') return;
+      if (target !== 'destaque' && target !== 'colecao' && target !== 'favoritos') return;
       activeTab = target;
       applyActiveTab();
       setTimeout(function() { window.dispatchEvent(new Event('resize')); }, 0);
@@ -835,8 +938,10 @@
               '</div>';
     }
 
+    var favLabel = isFavorite(game.id) ? 'Remover dos favoritos' : 'Adicionar aos favoritos';
     var featureLabel = game.featured ? 'Remover dos destaques' : 'Adicionar aos destaques';
     html += '<div class="modal-actions">';
+    html +=   '<button type="button" class="btn-secondary" data-toggle-fav="' + escapeAttr(game.id) + '">' + icon('heart', 15) + '<span>' + favLabel + '</span></button>';
     if (isAdmin) {
       html +=   '<button type="button" class="btn-secondary" data-toggle-feature="' + escapeAttr(game.id) + '">' + icon('star', 15) + '<span>' + featureLabel + '</span></button>';
       html +=   '<button type="button" class="btn-secondary" data-edit-cover="' + escapeAttr(game.id) + '">' + icon('camera', 15) + '<span>Trocar capa</span></button>';
@@ -856,6 +961,16 @@
         if (!isAdmin) return;
         detailsModalOverlay.classList.remove('active');
         openCoverModal(this.getAttribute('data-edit-cover'));
+      });
+    }
+    var toggleFavBtn = detailsModal.querySelector('[data-toggle-fav]');
+    if (toggleFavBtn) {
+      toggleFavBtn.addEventListener('click', function() {
+        var fid = this.getAttribute('data-toggle-fav');
+        var nowFav = toggleFavorite(fid);
+        detailsModalOverlay.classList.remove('active');
+        renderGames(searchInput.value);
+        showToast(nowFav ? 'Adicionado aos favoritos!' : 'Removido dos favoritos');
       });
     }
     var toggleFeatureBtn = detailsModal.querySelector('[data-toggle-feature]');
@@ -1172,7 +1287,9 @@
     if (!auth) {
       // Sem Firebase Auth configurado: libera o app sem login (modo antigo)
       showAppScreen();
-      loadGames(function() { renderGames(searchInput.value); });
+      loadFavorites(function() {
+        loadGames(function() { renderGames(searchInput.value); });
+      });
       return;
     }
     auth.onAuthStateChanged(function(user) {
@@ -1183,17 +1300,29 @@
           isAdmin = admin;
           setAdminUIVisible(isAdmin);
           showAppScreen();
-          loadGames(function() { renderGames(searchInput.value); });
+          loadFavorites(function() {
+            loadGames(function() { renderGames(searchInput.value); });
+          });
         });
       } else {
         currentUser = null;
         isAdmin = false;
         games = [];
+        favorites = [];
         showAuthScreen();
       }
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
+
+  // ====== PWA: registra o service worker para permitir instalar o app ======
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function() {
+      navigator.serviceWorker.register('sw.js').catch(function(err) {
+        console.warn('Falha ao registrar o service worker:', err);
+      });
+    });
+  }
 
 })();
