@@ -429,6 +429,7 @@
         }
       }).catch(function(e) {
         console.error('Erro ao carregar favoritos da nuvem:', e);
+        showToast('Não consegui ler os favoritos da nuvem (' + (e && e.code ? e.code : 'erro') + ')', true);
       });
     }
   }
@@ -437,7 +438,10 @@
     try { localStorage.setItem(favKey(), JSON.stringify(favorites)); } catch (e) {}
     if (db && currentUser) {
       db.collection('favorites').doc(currentUser.uid).set({ list: favorites, updatedAt: Date.now() })
-        .catch(function(e) { console.error('Erro ao salvar favoritos na nuvem:', e); });
+        .catch(function(e) {
+          console.error('Erro ao salvar favoritos na nuvem:', e);
+          showToast('Favorito NÃO sincronizou com a nuvem (' + (e && e.code ? e.code : 'erro') + ')', true);
+        });
     }
   }
 
