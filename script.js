@@ -216,6 +216,12 @@
   var requestNameInput         = document.getElementById('requestName');
   var requestNoteInput         = document.getElementById('requestNote');
   var closeRequestBtn          = document.getElementById('closeRequestBtn');
+  var dupHint                  = document.getElementById('dupHint');
+  var admUsersTools            = document.getElementById('admUsersTools');
+  var admUserSearch            = document.getElementById('admUserSearch');
+  var admHistoryFilters        = document.getElementById('admHistoryFilters');
+  var admHistUser              = document.getElementById('admHistUser');
+  var admHistAction            = document.getElementById('admHistAction');
 
   function generateId() {
     return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11);
@@ -309,6 +315,21 @@
     return db.collection('admins').doc(uid).get()
       .then(function(doc) { return doc.exists; })
       .catch(function() { return false; });
+  }
+
+  // Contas bloqueadas pelo painel ficam na coleção "blocked" (o servidor também nega a leitura pelas regras)
+  function checkBlocked(uid) {
+    if (!db) return Promise.resolve(false);
+    return db.collection('blocked').doc(uid).get()
+      .then(function(doc) { return doc.exists; })
+      .catch(function() { return false; });
+  }
+  function blockedSignOut() {
+    if (!auth) return;
+    auth.signOut().then(function() {
+      loginError.style.color = '';
+      loginError.textContent = 'Esta conta foi bloqueada. Fale com um administrador.';
+    });
   }
 
   function showAppScreen() { document.body.classList.add('authenticated'); }
@@ -1286,6 +1307,7 @@
     gameModalTitle.textContent = editing ? 'Editar jogo' : 'Novo jogo';
     gameSaveBtn.textContent = editing ? 'Salvar alterações' : 'Salvar';
     gameCoverInput.placeholder = 'Ex: capas/tlou2.jpg  ou  https://...';
+    if (dupHint) dupHint.textContent = '';
   }
   function openModal() {
     editingGameId = null;
@@ -1328,6 +1350,34 @@
     setTimeout(function() { importJsonTextarea.focus(); }, 100);
   }
   function closeImportModal() { importModalOverlay.classList.remove('active'); }
+
+  // Ignora acentos, maiúsculas e pontuação: "Spider-Man 1" e "spider man 1" são o mesmo nome
+  function normName(n) {
+    var r = String(n || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    return r || String(n || '').trim().toLowerCase();
+  }
+  function findDuplicate(name, ignoreId) {
+    var n = normName(name);
+    if (!n) return null;
+    for (var i = 0; i < games.length; i++) {
+      if (games[i].id !== ignoreId && normName(games[i].name) === n) return games[i];
+    }
+    return null;
+  }
+  function dupLabel(g) { return g.name + (g.version ? ' (' + g.version + ')' : ''); }
+  // Ao editar, só avisa se o nome foi mudado para um que já existe
+  function duplicateForForm(name) {
+    if (editingGameId) {
+      var cur = null;
+      for (var i = 0; i < games.length; i++) if (games[i].id === editingGameId) { cur = games[i]; break; }
+      if (cur && normName(cur.name) === normName(name)) return null;
+    }
+    return findDuplicate(name, editingGameId);
+  }
+  gameNameInput.addEventListener('input', function() {
+    var d = this.value.trim() ? duplicateForForm(this.value) : null;
+    dupHint.textContent = d ? 'Atenção: já existe "' + dupLabel(d) + '" na coleção.' : '';
+  });
 
   function looksLikeNewUrl(str) {
     return /^https?:\/\//i.test(str) || /^www\./i.test(str) || /^data:/i.test(str) || /^capas\//i.test(str);
@@ -1435,6 +1485,22 @@
       });
     });
     if (validos.length === 0) { showToast('Nenhum jogo válido encontrado', true); return; }
+
+    // Duplicados: nomes que já estão na coleção (a menos que ela seja substituída) ou que se repetem no arquivo
+    var seen = {}, unicos = [], repetidos = [];
+    if (!replaceAllCheckbox.checked) games.forEach(function(g) { seen[normName(g.name)] = true; });
+    validos.forEach(function(g) {
+      var k = normName(g.name);
+      if (seen[k]) repetidos.push(g.name); else { seen[k] = true; unicos.push(g); }
+    });
+    var duplicados = repetidos.length;
+    if (duplicados) {
+      var lista = repetidos.slice(0, 8).join('\n') + (duplicados > 8 ? '\n… e mais ' + (duplicados - 8) : '');
+      if (!confirm(duplicados + (duplicados === 1 ? ' jogo já existe' : ' jogos já existem') + ' (ou se repetem no arquivo):\n\n' + lista +
+                   '\n\nOK = importar só os novos e pular esses\nCancelar = voltar sem importar')) return;
+      validos = unicos;
+      if (validos.length === 0) { showToast('Todos os jogos já estavam na coleção', true); return; }
+    }
     var removeIds = replaceAllCheckbox.checked ? games.map(function(g) { return g.id; }) : [];
     if (replaceAllCheckbox.checked) games = validos;
     else games = games.concat(validos);
@@ -1442,7 +1508,7 @@
     renderGames(searchInput.value);
     logHistory('import', { detail: validos.length + ' jogos' + (replaceAllCheckbox.checked ? ' (substituiu a coleção)' : '') });
     closeImportModal();
-    showToast(validos.length + ' jogos importados' + (invalidos ? ' (' + invalidos + ' ignorados)' : ''));
+    showToast(validos.length + ' jogos importados' + ((invalidos || duplicados) ? ' (' + (invalidos + duplicados) + ' ignorados)' : ''));
   }
 
   openModalBtn.addEventListener('click', openModal);
@@ -1481,6 +1547,8 @@
     if (!name || !linksText) { showToast('Preencha o nome e ao menos um link', true); return; }
     var links = parseLinks(linksText);
     if (links.length === 0) { showToast('Nenhum link válido encontrado', true); return; }
+    var dupGame = duplicateForForm(name);
+    if (dupGame && !confirm('Já existe um jogo com esse nome:\n\n' + dupLabel(dupGame) + '\n\nSalvar mesmo assim?')) return;
 
     if (editingGameId) {
       var target = null;
@@ -1579,7 +1647,9 @@
     if (userEmailLabel) userEmailLabel.textContent = user.email || '';
     var fresh = user.emailVerified ? Promise.resolve() :
       user.reload().then(function() { return user.emailVerified ? user.getIdToken(true) : null; }).catch(function() {});
-    return fresh.then(function() { return checkAdminStatus(user.uid); }).then(function(admin) {
+    return fresh.then(function() { return Promise.all([checkAdminStatus(user.uid), checkBlocked(user.uid)]); }).then(function(res) {
+      var admin = res[0];
+      if (res[1] && !admin) { blockedSignOut(); return; }
       if (!admin && !user.emailVerified) { showVerifyScreen(user); return; }
       isAdmin = admin;
       authBox.classList.remove('is-verify');
@@ -1789,53 +1859,176 @@
     add: 'adicionou', remove: 'removeu', import: 'importou', feature: 'destacou',
     unfeature: 'tirou dos destaques', cover: 'trocou a capa de', edit: 'editou',
     promote: 'promoveu a admin', demote: 'removeu de admin',
-    report_done: 'resolveu o reporte de', request_done: 'concluiu o pedido de'
+    report_done: 'resolveu o reporte de', request_done: 'concluiu o pedido de', block: 'bloqueou a conta', unblock: 'desbloqueou a conta'
   };
+
+  var HISTORY_KEEP_DAYS = 90;   // registros mais velhos que isso são apagados automaticamente
+  var histAll = [];
+
+  // Apaga registros antigos (no máximo uma vez a cada 12 h por aparelho). Falhar aqui nunca trava o painel.
+  function purgeOldHistory() {
+    var last = parseInt(localStorage.getItem('zenkai_hist_purge') || '0', 10);
+    if (Date.now() - last < 12 * 3600000) return Promise.resolve(0);
+    var cutoff = Date.now() - HISTORY_KEEP_DAYS * 86400000;
+    var total = 0;
+    function round(n) {
+      return db.collection('history').where('at', '<', cutoff).limit(400).get().then(function(snap) {
+        if (snap.empty) return;
+        var b = db.batch();
+        snap.forEach(function(d) { b.delete(d.ref); });
+        return b.commit().then(function() {
+          total += snap.size;
+          if (snap.size === 400 && n < 5) return round(n + 1);
+        });
+      });
+    }
+    return round(0).then(function() {
+      try { localStorage.setItem('zenkai_hist_purge', String(Date.now())); } catch (e) {}
+      return total;
+    }).catch(function(e) { console.warn('Limpeza do histórico falhou:', e); return 0; });
+  }
+
+  function fillSelect(sel, items, allLabel) {
+    var cur = sel.value;
+    sel.innerHTML = '<option value="">' + allLabel + '</option>' + items.map(function(i) {
+      return '<option value="' + escapeAttr(i.v) + '">' + escapeHtml(i.l) + '</option>';
+    }).join('');
+    sel.value = cur;
+  }
+
+  function fillHistoryFilters() {
+    var people = {}, acts = {};
+    histAll.forEach(function(r) { if (r.email) people[r.email] = 1; if (r.action) acts[r.action] = 1; });
+    fillSelect(admHistUser, Object.keys(people).sort().map(function(e) { return { v: e, l: e }; }), 'Todas as pessoas');
+    fillSelect(admHistAction, Object.keys(acts).map(function(a) {
+      var l = ACTION_LABELS[a] || a;
+      return { v: a, l: l.charAt(0).toUpperCase() + l.slice(1) };
+    }).sort(function(x, y) { return x.l.localeCompare(y.l, 'pt-BR'); }), 'Todas as ações');
+  }
+
+  function renderHistory() {
+    var u = admHistUser.value, a = admHistAction.value;
+    var list = histAll.filter(function(r) { return (!u || r.email === u) && (!a || r.action === a); });
+    if (!histAll.length) { admHistoryList.innerHTML = '<p class="help-text">Nenhuma alteração registrada ainda.</p>'; return; }
+    var html = '<p class="help-text" style="margin:0;">Mostrando ' + list.length + ' de ' + histAll.length + ' registros</p>';
+    if (!list.length) html += '<p class="help-text">Nenhum registro com esses filtros.</p>';
+    list.forEach(function(r) {
+      var target = r.game || r.detail || '';
+      var extra = (r.game && r.detail) ? ' <span class="adm-date">(' + escapeHtml(r.detail) + ')</span>' : '';
+      html += '<div class="adm-row hist"><div class="adm-what"><b>' + escapeHtml(r.email) + '</b> ' +
+              escapeHtml(ACTION_LABELS[r.action] || r.action) + ' <b>' + escapeHtml(target) + '</b>' + extra +
+              '</div><span class="adm-date">' + escapeHtml(fmtWhen(r.at)) + '</span></div>';
+    });
+    admHistoryList.innerHTML = html;
+  }
 
   function loadHistory() {
     admHistoryList.innerHTML = '<p class="help-text">Carregando...</p>';
-    db.collection('history').orderBy('at', 'desc').limit(100).get().then(function(snap) {
-      if (snap.empty) { admHistoryList.innerHTML = '<p class="help-text">Nenhuma alteração registrada ainda.</p>'; return; }
-      var html = '';
-      snap.forEach(function(doc) {
-        var r = doc.data();
-        var target = r.game || r.detail || '';
-        var extra = (r.game && r.detail) ? ' <span class="adm-date">(' + escapeHtml(r.detail) + ')</span>' : '';
-        var when = new Date(r.at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        html += '<div class="adm-row hist"><div class="adm-what"><b>' + escapeHtml(r.email) + '</b> ' +
-                escapeHtml(ACTION_LABELS[r.action] || r.action) + ' <b>' + escapeHtml(target) + '</b>' + extra +
-                '</div><span class="adm-date">' + escapeHtml(when) + '</span></div>';
-      });
-      admHistoryList.innerHTML = html;
+    purgeOldHistory().then(function(n) {
+      if (n) showToast(n + ' registros antigos apagados do histórico');
+      return db.collection('history').orderBy('at', 'desc').limit(300).get();
+    }).then(function(snap) {
+      histAll = [];
+      snap.forEach(function(doc) { histAll.push(doc.data()); });
+      fillHistoryFilters();
+      renderHistory();
     }).catch(function(e) {
       admHistoryList.innerHTML = '<p class="help-text">Não foi possível ler o histórico (' + escapeHtml(e && e.code ? e.code : 'erro') + '). Confira as regras do Firestore.</p>';
     });
   }
 
   // ====== Painel de administradores ======
+  var admUsersCache = [];
+
+  function fmtDate(t) { return new Date(t).toLocaleDateString('pt-BR'); }
+
   function loadAdminUsers() {
     admUsersList.innerHTML = '<p class="help-text">Carregando...</p>';
-    Promise.all([db.collection('users').get(), db.collection('admins').get()]).then(function(res) {
-      var adminIds = {};
+    Promise.all([
+      db.collection('users').get(),
+      db.collection('admins').get(),
+      db.collection('blocked').get().catch(function() { return null; })
+    ]).then(function(res) {
+      var adminIds = {}, blockedIds = {};
       res[1].forEach(function(d) { adminIds[d.id] = true; });
+      if (res[2]) res[2].forEach(function(d) { blockedIds[d.id] = d.data().email || ''; });
       var users = [];
-      res[0].forEach(function(d) { users.push({ uid: d.id, email: d.data().email || d.id, admin: !!adminIds[d.id] }); });
+      res[0].forEach(function(d) {
+        var x = d.data();
+        users.push({ uid: d.id, email: x.email || d.id, createdAt: x.createdAt || 0, lastLogin: x.lastLogin || 0,
+                     admin: !!adminIds[d.id], blocked: blockedIds.hasOwnProperty(d.id) });
+      });
       Object.keys(adminIds).forEach(function(id) {
-        if (!users.some(function(u) { return u.uid === id; })) users.push({ uid: id, email: 'Admin sem email registrado (' + id.slice(0, 6) + '…)', admin: true });
+        if (!users.some(function(u) { return u.uid === id; })) users.push({ uid: id, email: 'Admin sem email registrado (' + id.slice(0, 6) + '…)', createdAt: 0, lastLogin: 0, admin: true, blocked: false });
       });
-      users.sort(function(a, b) { return (b.admin - a.admin) || a.email.localeCompare(b.email); });
-      var html = '';
-      users.forEach(function(u) {
-        var me = currentUser && u.uid === currentUser.uid;
-        html += '<div class="adm-row"><div class="adm-email"><span class="adm-email-text">' + escapeHtml(u.email) + '</span>' +
-                (me ? '<span class="adm-date">você</span>' : '') +
-                (u.admin ? '<span class="admin-pill" style="display:inline-flex;">ADMIN</span>' : '') + '</div>' +
-                (me ? '' : '<button type="button" class="btn-secondary adm-btn" data-adm-uid="' + escapeAttr(u.uid) + '" data-adm-email="' + escapeAttr(u.email) + '" data-adm-admin="' + (u.admin ? '1' : '0') + '">' +
-                  (u.admin ? 'Remover admin' : 'Promover') + '</button>') + '</div>';
+      Object.keys(blockedIds).forEach(function(id) {
+        if (!users.some(function(u) { return u.uid === id; })) users.push({ uid: id, email: blockedIds[id] || id, createdAt: 0, lastLogin: 0, admin: false, blocked: true });
       });
-      admUsersList.innerHTML = html || '<p class="help-text">Nenhuma conta registrada ainda.</p>';
+      // admins primeiro, depois bloqueadas, depois as mais recentes (facilita achar spam novo)
+      users.sort(function(a, b) {
+        return (b.admin - a.admin) || (b.blocked - a.blocked) || ((b.createdAt || 0) - (a.createdAt || 0)) || a.email.localeCompare(b.email);
+      });
+      admUsersCache = users;
+      renderAdminUsers();
     }).catch(function(e) {
       admUsersList.innerHTML = '<p class="help-text">Não foi possível ler as contas (' + escapeHtml(e && e.code ? e.code : 'erro') + '). Confira as regras do Firestore.</p>';
+    });
+  }
+
+  function renderAdminUsers() {
+    var q = (admUserSearch.value || '').trim().toLowerCase();
+    var list = admUsersCache.filter(function(u) { return !q || u.email.toLowerCase().indexOf(q) !== -1; });
+    var html = '';
+    list.forEach(function(u) {
+      var me = currentUser && u.uid === currentUser.uid;
+      var dates = [];
+      if (u.createdAt) dates.push('criada em ' + fmtDate(u.createdAt));
+      if (u.lastLogin) dates.push('último acesso ' + fmtWhen(u.lastLogin));
+      var btns = '';
+      if (!me) {
+        btns += '<button type="button" class="btn-secondary adm-btn" data-adm-uid="' + escapeAttr(u.uid) + '" data-adm-email="' + escapeAttr(u.email) + '" data-adm-admin="' + (u.admin ? '1' : '0') + '">' +
+                (u.admin ? 'Remover admin' : 'Promover') + '</button>';
+        if (!u.admin) {
+          btns += '<button type="button" class="' + (u.blocked ? 'btn-secondary' : 'btn-danger') + ' adm-btn" data-blk-uid="' + escapeAttr(u.uid) + '" data-blk-email="' + escapeAttr(u.email) + '" data-blk-state="' + (u.blocked ? '1' : '0') + '">' +
+                  (u.blocked ? 'Desbloquear' : 'Bloquear') + '</button>';
+        }
+      }
+      html += '<div class="adm-row col"><div class="adm-what"><b>' + escapeHtml(u.email) + '</b> ' +
+              (me ? '<span class="adm-date">você</span> ' : '') +
+              (u.admin ? '<span class="admin-pill" style="display:inline-flex;">ADMIN</span>' : '') +
+              (u.blocked ? '<span class="blocked-pill">BLOQUEADA</span>' : '') +
+              (dates.length ? '<br><span class="adm-date">' + escapeHtml(dates.join(' · ')) + '</span>' : '') +
+              '</div>' + (btns ? '<div class="adm-actions">' + btns + '</div>' : '') + '</div>';
+    });
+    admUsersList.innerHTML = html || '<p class="help-text">' + (q ? 'Nenhuma conta encontrada.' : 'Nenhuma conta registrada ainda.') + '</p>';
+  }
+
+  // Remove avisos e pedidos que uma conta bloqueada deixou na caixa de entrada
+  function purgeUserContent(uid) {
+    ['reports', 'requests'].forEach(function(col) {
+      db.collection(col).where('uid', '==', uid).limit(400).get().then(function(snap) {
+        if (snap.empty) return;
+        var b = db.batch();
+        snap.forEach(function(d) { b.delete(d.ref); });
+        return b.commit().then(function() { refreshAdminBadge(); });
+      }).catch(function(e) { console.warn('Não limpou ' + col + ' da conta bloqueada:', e); });
+    });
+  }
+
+  function setUserBlocked(uid, email, block) {
+    if (!isAdmin) return;
+    var msg = block ? 'Bloquear ' + email + '?\n\nA conta deixa de ver a coleção e de enviar avisos ou pedidos. Os avisos e pedidos que ela já enviou serão apagados.'
+                    : 'Desbloquear ' + email + '?';
+    if (!confirm(msg)) return;
+    var ref = db.collection('blocked').doc(uid);
+    var p = block ? ref.set({ email: email, by: currentUser.email || '', at: Date.now() }) : ref.delete();
+    p.then(function() {
+      logHistory(block ? 'block' : 'unblock', { detail: email });
+      if (block) purgeUserContent(uid);
+      showToast(block ? 'Conta bloqueada' : 'Conta desbloqueada');
+      loadAdminUsers();
+    }).catch(function(e) {
+      showToast('Não foi possível alterar (' + (e && e.code ? e.code : 'erro') + ')', true);
     });
   }
 
@@ -1856,16 +2049,18 @@
   }
 
   var ADM_HELP = {
-    admins: 'Aparecem aqui as contas que já entraram no site. Quem for promovido passa a poder adicionar, remover e editar jogos.',
+    admins: 'Contas que já entraram no site. Promover dá acesso de admin. Bloquear impede a conta de ver a coleção e apaga os avisos e pedidos dela.',
     reports: 'Links que os usuários marcaram como quebrados. Corrija o link no jogo e clique em Resolvido.',
     requests: 'Jogos que os usuários pediram. "Adicionar" abre o formulário já com o nome; depois marque como concluído.',
-    history: ''
+    history: 'Últimas alterações feitas pelos admins. Registros com mais de ' + HISTORY_KEEP_DAYS + ' dias são apagados automaticamente.'
   };
   function showAdmTab(tab) {
     var tabs = document.querySelectorAll('.adm-tab');
     for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', tabs[i].getAttribute('data-adm-tab') === tab);
     var lists = { admins: admUsersList, history: admHistoryList, reports: admReportsList, requests: admRequestsList };
     for (var k in lists) lists[k].style.display = k === tab ? '' : 'none';
+    admUsersTools.style.display = tab === 'admins' ? '' : 'none';
+    admHistoryFilters.style.display = tab === 'history' ? 'flex' : 'none';
     admHelp.textContent = ADM_HELP[tab];
     admHelp.style.display = ADM_HELP[tab] ? '' : 'none';
     if (tab === 'admins') loadAdminUsers();
@@ -1879,6 +2074,9 @@
         });
     }
   }
+  admUserSearch.addEventListener('input', renderAdminUsers);
+  admHistUser.addEventListener('change', renderHistory);
+  admHistAction.addEventListener('change', renderHistory);
 
   adminPanelBtn.addEventListener('click', function() {
     if (!isAdmin || !db) return;
@@ -1893,6 +2091,8 @@
     admTabEls[ati].addEventListener('click', function() { showAdmTab(this.getAttribute('data-adm-tab')); });
   }
   admUsersList.addEventListener('click', function(e) {
+    var blk = e.target.closest('[data-blk-uid]');
+    if (blk) { setUserBlocked(blk.getAttribute('data-blk-uid'), blk.getAttribute('data-blk-email'), blk.getAttribute('data-blk-state') !== '1'); return; }
     var b = e.target.closest('[data-adm-uid]');
     if (!b) return;
     setUserAdmin(b.getAttribute('data-adm-uid'), b.getAttribute('data-adm-email'), b.getAttribute('data-adm-admin') !== '1');

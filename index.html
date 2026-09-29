@@ -203,6 +203,7 @@
       <div class="input-group">
         <label for="gameName">Nome do jogo *</label>
         <input type="text" id="gameName" placeholder="Ex: The Last of Us Part 2" required>
+        <p class="dup-hint" id="dupHint"></p>
       </div>
       <div class="input-group">
         <label for="gameVersion">Versão / CUSA (opcional)</label>
@@ -319,6 +320,11 @@
       <button type="button" class="adm-tab" data-adm-tab="history">Histórico</button>
     </div>
     <p class="help-text" id="admHelp">Aparecem aqui as contas que já entraram no site. Quem for promovido passa a poder adicionar, remover e editar jogos.</p>
+    <div class="adm-tools" id="admUsersTools"><input type="text" id="admUserSearch" placeholder="Buscar conta por email..." autocomplete="off"></div>
+    <div class="adm-filters" id="admHistoryFilters" style="display:none;">
+      <select id="admHistUser" aria-label="Filtrar por pessoa"><option value="">Todas as pessoas</option></select>
+      <select id="admHistAction" aria-label="Filtrar por ação"><option value="">Todas as ações</option></select>
+    </div>
     <div class="adm-list" id="admUsersList"></div>
     <div class="adm-list" id="admHistoryList" style="display:none;"></div>
     <div class="adm-list" id="admReportsList" style="display:none;"></div>

@@ -900,3 +900,30 @@ body.authenticated #authOverlay { display: none; }
 @media (max-width: 420px) {
   .adm-tab { font-size: 0.78rem; padding: 0.5rem 0.15rem; }
 }
+
+/* ============ JOGO DUPLICADO ============ */
+.dup-hint { color: #ffb020; font-size: 0.8rem; font-weight: 600; margin: 0.1rem 0 0 0.2rem; }
+.dup-hint:empty { display: none; }
+
+/* ============ PAINEL: BUSCA, FILTROS E BLOQUEIO ============ */
+.adm-tools { margin-bottom: 0.7rem; }
+.adm-tools input {
+  width: 100%; background: rgba(255,255,255,0.03); border: 1px solid var(--zenkai-gray);
+  border-radius: var(--radius-pill); padding: 0.55rem 1rem; color: #fff; font-size: 0.88rem; outline: none;
+  transition: border-color 0.15s;
+}
+.adm-tools input:focus { border-color: var(--zenkai-red); }
+.adm-filters { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.7rem; }
+.adm-filters select {
+  flex: 1 1 150px; min-width: 0;
+  background: rgba(255,255,255,0.03); border: 1px solid var(--zenkai-gray); color: var(--zenkai-silver);
+  padding: 0.5rem 0.7rem; border-radius: var(--radius-pill);
+  font-size: 0.85rem; font-family: 'Rajdhani', sans-serif; font-weight: 600; cursor: pointer; outline: none;
+}
+.adm-filters select:hover, .adm-filters select:focus { border-color: var(--zenkai-red); color: #fff; }
+.adm-filters select option { background: #16161a; color: #fff; }
+.blocked-pill {
+  display: inline-flex; align-items: center; padding: 0.1rem 0.5rem; border-radius: var(--radius-pill);
+  background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.45);
+  color: #ff8a8a; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.05em; margin-left: 0.3rem;
+}
