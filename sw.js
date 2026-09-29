@@ -3,12 +3,17 @@
 // Não intercepta chamadas ao Firebase: a lista de jogos e favoritos
 // sempre vem da nuvem quando há conexão.
 
-var CACHE_NAME = 'zenkai-cache-v7';
+var CACHE_NAME = 'zenkai-cache-v9';
 var ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
-  './script.js',
+  './js/core.js',
+  './js/data.js',
+  './js/ui.js',
+  './js/admin.js',
+  './js/auth.js',
+  './js/app.js',
   './manifest.json'
 ];
 
@@ -36,11 +41,12 @@ self.addEventListener('fetch', function(event) {
   var req = event.request;
   if (req.method !== 'GET') return;
 
-  // Nunca cachear chamadas ao Firebase/Google — precisam ser sempre atuais.
+  // Nunca cachear chamadas ao Firebase/Google (inclui App Check/reCAPTCHA) — precisam ser sempre atuais.
   if (req.url.indexOf('firestore.googleapis.com') !== -1 ||
       req.url.indexOf('googleapis.com') !== -1 ||
       req.url.indexOf('google.com') !== -1 ||
-      req.url.indexOf('gstatic.com/firebasejs') !== -1) {
+      req.url.indexOf('gstatic.com/firebasejs') !== -1 ||
+      req.url.indexOf('gstatic.com/recaptcha') !== -1) {
     return;
   }
 
