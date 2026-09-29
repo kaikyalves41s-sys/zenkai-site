@@ -132,6 +132,9 @@
     </nav>
 
     <div class="header-actions">
+      <button class="icon-action" id="requestBtn" title="Pedir um jogo" aria-label="Pedir um jogo">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v11H9l-5 4z"/><line x1="12" y1="8.2" x2="12" y2="12.8"/><line x1="9.7" y1="10.5" x2="14.3" y2="10.5"/></svg>
+      </button>
       <button class="icon-action" id="exportBtn" title="Exportar backup" aria-label="Exportar backup">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V4"/><path d="M6.5 9.5L12 4l5.5 5.5"/><path d="M4 20h16"/></svg>
       </button>
@@ -140,6 +143,7 @@
       </button>
       <button class="icon-action" id="adminPanelBtn" data-admin-only="1" title="Administração" aria-label="Administração">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8.2-7.5 9.5-4.3-1.3-7.5-5-7.5-9.5V6z"/></svg>
+        <span class="notif-dot" id="adminDot"></span>
       </button>
       <button class="btn btn-primary" id="openModalBtn" data-admin-only="1">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -159,6 +163,26 @@
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     <input type="text" id="searchInput" placeholder="Buscar por nome do jogo...">
     <button id="clearSearchBtn">Limpar</button>
+  </div>
+
+  <div class="filters-row">
+    <div class="filter-field">
+      <label for="sortSelect">Ordenar</label>
+      <select id="sortSelect">
+        <option value="default">Padrão</option>
+        <option value="recent">Mais recentes</option>
+        <option value="az">Nome (A–Z)</option>
+        <option value="za">Nome (Z–A)</option>
+      </select>
+    </div>
+    <div class="filter-field">
+      <label for="regionSelect">Região</label>
+      <select id="regionSelect">
+        <option value="">Todas</option>
+        <option value="USA">USA</option>
+        <option value="EUR">EUR</option>
+      </select>
+    </div>
   </div>
 
   <div class="counter" id="counter"></div>
@@ -262,17 +286,43 @@
   </div>
 </div>
 
+<!-- Modal de pedir jogo -->
+<div class="modal-overlay" id="requestModalOverlay">
+  <div class="modal">
+    <h2>Pedir um jogo</h2>
+    <p class="help-text">Não achou o que procurava? Diga qual jogo você quer e os administradores recebem o pedido.</p>
+    <form id="requestForm">
+      <div class="input-group">
+        <label for="requestName">Nome do jogo *</label>
+        <input type="text" id="requestName" maxlength="120" placeholder="Ex: Bloodborne" required>
+      </div>
+      <div class="input-group">
+        <label for="requestNote">Observação (opcional)</label>
+        <input type="text" id="requestNote" maxlength="200" placeholder="Ex: versão USA, com DLCs">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-secondary" id="closeRequestBtn">Cancelar</button>
+        <button type="submit" class="btn-save" id="requestSubmitBtn">Enviar pedido</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Modal de administração (admins + histórico) -->
 <div class="modal-overlay" id="adminModalOverlay">
   <div class="modal">
     <h2>Administração</h2>
     <div class="adm-tabs">
-      <button type="button" class="adm-tab active" data-adm-tab="admins">Administradores</button>
+      <button type="button" class="adm-tab active" data-adm-tab="admins">Admins</button>
+      <button type="button" class="adm-tab" data-adm-tab="reports">Reportes<span class="adm-count" id="admCountReports"></span></button>
+      <button type="button" class="adm-tab" data-adm-tab="requests">Pedidos<span class="adm-count" id="admCountRequests"></span></button>
       <button type="button" class="adm-tab" data-adm-tab="history">Histórico</button>
     </div>
     <p class="help-text" id="admHelp">Aparecem aqui as contas que já entraram no site. Quem for promovido passa a poder adicionar, remover e editar jogos.</p>
     <div class="adm-list" id="admUsersList"></div>
     <div class="adm-list" id="admHistoryList" style="display:none;"></div>
+    <div class="adm-list" id="admReportsList" style="display:none;"></div>
+    <div class="adm-list" id="admRequestsList" style="display:none;"></div>
     <div class="modal-actions">
       <button type="button" class="btn-secondary" id="closeAdminBtn">Fechar</button>
     </div>

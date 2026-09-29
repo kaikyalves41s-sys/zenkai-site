@@ -865,3 +865,38 @@ body.authenticated #authOverlay { display: none; }
   html body .modal-overlay.active .modal .adm-tabs { flex: 0 0 auto !important; }
   html body .modal-overlay.active .modal .adm-btn { flex: 0 0 auto !important; width: auto !important; padding: 0.45rem 0.7rem !important; }
 }
+
+/* ============ SELO "NOVO" ============ */
+.card-badge-new {
+  top: auto; right: auto; left: 0.65rem; bottom: 0.65rem; z-index: 2;
+  background: var(--zenkai-red); color: #fff;
+  border-color: rgba(255,255,255,0.25);
+  font-weight: 700; letter-spacing: 0.04em;
+  box-shadow: 0 0 12px rgba(225, 29, 46, 0.55);
+}
+.badge-new { background: var(--zenkai-red) !important; color: #fff !important; border-color: rgba(255,255,255,0.25) !important; }
+
+/* ============ REPORTAR LINK QUEBRADO ============ */
+.icon-btn.report:hover { color: #ffb020; border-color: rgba(255, 176, 32, 0.5); }
+.icon-btn.report.is-reported { color: #ffb020; border-color: rgba(255, 176, 32, 0.5); background: rgba(255, 176, 32, 0.12); }
+
+/* ============ AVISOS NO PAINEL ADMIN ============ */
+#adminPanelBtn { position: relative; }
+.notif-dot {
+  display: none; position: absolute; top: 6px; right: 6px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--zenkai-red-bright); box-shadow: 0 0 0 2px var(--zenkai-black-soft);
+}
+.adm-count {
+  margin-left: 0.35rem; padding: 0 0.42rem; border-radius: var(--radius-pill);
+  background: rgba(255,255,255,0.15); font-size: 0.72rem;
+}
+.adm-count:empty { display: none; }
+.adm-tab.active .adm-count { background: rgba(0,0,0,0.28); }
+.adm-row.col { flex-wrap: wrap; }
+.adm-row.col .adm-what { flex: 1 1 190px; }
+.adm-actions { display: flex; gap: 0.4rem; margin-left: auto; flex-shrink: 0; }
+.empty-state .btn-save { margin-top: 1rem; }
+@media (max-width: 420px) {
+  .adm-tab { font-size: 0.78rem; padding: 0.5rem 0.15rem; }
+}

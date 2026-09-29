@@ -131,6 +131,9 @@
   var pendingCoverData = null;
   var featuredIndex = 0;
   var activeTab = 'destaque';
+  var sortMode = 'default';
+  var regionFilter = '';
+  var NEW_DAYS = 7; // por quantos dias o selo "Novo" aparece
 
   var carouselsContainer  = document.getElementById('carouselsContainer');
   var counter             = document.getElementById('counter');
@@ -200,6 +203,19 @@
   var admHistoryList           = document.getElementById('admHistoryList');
   var admHelp                  = document.getElementById('admHelp');
   var closeAdminBtn            = document.getElementById('closeAdminBtn');
+  var admReportsList           = document.getElementById('admReportsList');
+  var admRequestsList          = document.getElementById('admRequestsList');
+  var admCountReports          = document.getElementById('admCountReports');
+  var admCountRequests         = document.getElementById('admCountRequests');
+  var adminDot                 = document.getElementById('adminDot');
+  var sortSelect               = document.getElementById('sortSelect');
+  var regionSelect             = document.getElementById('regionSelect');
+  var requestBtn               = document.getElementById('requestBtn');
+  var requestModalOverlay      = document.getElementById('requestModalOverlay');
+  var requestForm              = document.getElementById('requestForm');
+  var requestNameInput         = document.getElementById('requestName');
+  var requestNoteInput         = document.getElementById('requestNote');
+  var closeRequestBtn          = document.getElementById('closeRequestBtn');
 
   function generateId() {
     return 'id-' + Date.now() + '-' + Math.random().toString(36).slice(2, 11);
@@ -229,6 +245,7 @@
     alert: '<path d="M12 3.2l9.5 17H2.5z"/><line x1="12" y1="9.5" x2="12" y2="14"/><line x1="12" y1="16.8" x2="12" y2="16.9"/>',
     heart: '<path d="M12 20.5c-.3 0-.6-.1-.8-.3C7.8 17 3 12.9 3 8.8 3 6 5.2 3.8 8 3.8c1.5 0 2.9.7 3.8 1.8.9-1.1 2.3-1.8 3.8-1.8 2.8 0 5 2.2 5 5 0 4.1-4.8 8.2-8.2 11.4-.2.2-.5.3-.8.3z"/>'
   };
+  ICON_PATHS.flag = '<path d="M5 21V4"/><path d="M5 4h11l-2 4 2 4H5"/>';
   ICON_PATHS.edit = '<path d="M4 20h4l10.5-10.5a2.1 2.1 0 00-3-3L5 17z"/><path d="M13.5 8.5l3 3"/>';
   function icon(name, size) {
     size = size || 16;
@@ -545,6 +562,23 @@
     return false;
   }
 
+  // Região vem do campo "versão" (ex.: "CUSA07820 – USA")
+  function getRegion(game) {
+    var m = /\b(USA|EUR)\b/i.exec(game.version || '');
+    return m ? m[1].toUpperCase() : '';
+  }
+  // createdAt já é salvo em cada jogo; jogos antigos têm data de 2020 e nunca ganham o selo
+  function isNewGame(game) {
+    return !!game.createdAt && (Date.now() - game.createdAt) < NEW_DAYS * 86400000;
+  }
+  function sortGames(list) {
+    var arr = list.slice();
+    if (sortMode === 'recent') arr.sort(function(a, b) { return (b.createdAt || 0) - (a.createdAt || 0); });
+    else if (sortMode === 'az') arr.sort(function(a, b) { return (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }); });
+    else if (sortMode === 'za') arr.sort(function(a, b) { return (b.name || '').localeCompare(a.name || '', 'pt-BR', { sensitivity: 'base' }); });
+    return arr;
+  }
+
   function buildGameCardHtml(game) {
     var coverUrl = (game.cover && game.cover.trim()) ? game.cover : FALLBACK_COVER;
     var safeName = escapeHtml(game.name);
@@ -559,6 +593,7 @@
                      'onerror="this.onerror=null;this.src=\'' + FALLBACK_COVER + '\'">';
     if (isAdmin) html +=     '<div class="overlay-cover">' + icon('camera', 22) + '<span>Trocar capa</span></div>';
     if (game.featured) html += '<span class="card-badge card-badge-featured">' + icon('star', 12) + '<span>Destaque</span></span>';
+    if (isNewGame(game)) html += '<span class="card-badge card-badge-new">Novo</span>';
     html +=     '<span class="card-badge">' + icon('folder', 12) + qtdLinks + (qtdLinks === 1 ? ' link' : ' links') + '</span>';
     html +=   '</div>';
     html +=   '<div class="card-info">';
@@ -586,16 +621,23 @@
         return g.name.toLowerCase().indexOf(term) !== -1;
       });
     }
+    if (regionFilter) filtered = filtered.filter(function(g) { return getRegion(g) === regionFilter; });
+    filtered = sortGames(filtered);
 
     if (games.length === 0) counter.textContent = '';
-    else if (term) counter.textContent = filtered.length + ' de ' + games.length + ' jogos';
+    else if (term || regionFilter) counter.textContent = filtered.length + ' de ' + games.length + ' jogos';
     else counter.textContent = games.length + (games.length === 1 ? ' jogo salvo' : ' jogos salvos');
 
     if (filtered.length === 0) {
       if (games.length === 0) {
         carouselsContainer.innerHTML = '<div class="empty-state">' + icon('controller', 46) + '<h2>Nenhum jogo salvo ainda</h2><p>Clique em "Adicionar jogo" para começar.</p></div>';
       } else {
-        carouselsContainer.innerHTML = '<div class="empty-state">' + icon('search', 46) + '<h2>Nenhum resultado para "' + escapeHtml(filter) + '"</h2><p>Tente outro termo.</p></div>';
+        var noMsg = term ? 'Nenhum resultado para "' + escapeHtml(filter.trim()) + '"' : 'Nenhum jogo nessa região';
+        carouselsContainer.innerHTML = '<div class="empty-state">' + icon('search', 46) + '<h2>' + noMsg + '</h2><p>' +
+          (term ? 'Tente outro termo ou peça esse jogo.' : 'Tente outra região.') + '</p>' +
+          (term ? '<button type="button" class="btn-save" id="requestFromSearch">Pedir este jogo</button>' : '') + '</div>';
+        var rfs = document.getElementById('requestFromSearch');
+        if (rfs) rfs.addEventListener('click', function() { openRequestModal(filter.trim()); });
       }
       return;
     }
@@ -627,6 +669,7 @@
 
         html += '<div class="cf-item" data-id="' + escapeAttr(game.id) + '" data-index="' + idx + '">';
         html +=   '<div class="cf-card">';
+        if (isNewGame(game)) html += '<span class="card-badge card-badge-new">Novo</span>';
         html +=     '<div class="cf-cover">';
         html +=       '<img src="' + safeCover + '" alt="' + safeName + '" ' +
                           'onerror="this.onerror=null;this.src=\'' + FALLBACK_COVER + '\'">';
@@ -656,7 +699,7 @@
 
     html += '<section class="carousel-section tab-section" id="colecaoSection">';
     html +=   '<div class="carousel-header">';
-    html +=     '<h2 class="carousel-title">' + icon('grid', 18) + '<span>' + (term ? 'Resultados' : 'Sua coleção') + '</span> <span class="count-pill">' + colecaoList.length + '</span></h2>';
+    html +=     '<h2 class="carousel-title">' + icon('grid', 18) + '<span>' + (term || regionFilter ? 'Resultados' : 'Sua coleção') + '</span> <span class="count-pill">' + colecaoList.length + '</span></h2>';
     if (colecaoList.length > 0) {
       html +=     '<div class="carousel-nav">';
       html +=       '<button class="nav-arrow" data-dir="prev" data-target="main">‹</button>';
@@ -1001,13 +1044,14 @@
     html += '<h2>' + safeName + '</h2>';
     html += '<div class="modal-subtitle">';
     if (safeVersion) html += '<span class="badge">' + icon('disc', 13) + safeVersion + '</span>';
+    if (isNewGame(game)) html += '<span class="badge badge-new">Novo</span>';
     html += '<span>' + (game.links ? game.links.length : 0) +
             ((game.links && game.links.length === 1) ? ' link disponível' : ' links disponíveis') + '</span>';
     html += '</div>';
 
     html += '<div class="links-list">';
     if (game.links && game.links.length) {
-      game.links.forEach(function(link) {
+      game.links.forEach(function(link, li) {
         var safeLabel = escapeHtml(link.label || 'Link');
         var safeUrl = escapeAttr(link.url);
         var shortUrl = escapeHtml(truncateUrl(link.url));
@@ -1017,6 +1061,7 @@
                     '<div class="url" title="' + safeUrl + '">' + shortUrl + '</div>' +
                   '</div>' +
                   '<div class="actions">' +
+                    '<button class="icon-btn report' + (isReported(game.id, link.url) ? ' is-reported' : '') + '" data-report="' + li + '" title="Avisar link quebrado">' + icon('flag', 15) + '</button>' +
                     '<button class="icon-btn" data-copy="' + safeUrl + '" title="Copiar link">' + icon('copy', 15) + '</button>' +
                     '<a class="icon-btn go" href="' + safeUrl + '" target="_blank" rel="noopener" title="Abrir link">' + icon('arrowUpRight', 15) + '</a>' +
                   '</div>' +
@@ -1095,6 +1140,13 @@
         detailsModalOverlay.classList.remove('active');
         renderGames(searchInput.value);
         showToast(g.featured ? 'Adicionado aos destaques!' : 'Removido dos destaques');
+      });
+    }
+
+    var reportBtns = detailsModal.querySelectorAll('[data-report]');
+    for (var rb = 0; rb < reportBtns.length; rb++) {
+      reportBtns[rb].addEventListener('click', function() {
+        reportLink(game, game.links[parseInt(this.getAttribute('data-report'), 10)], this);
       });
     }
 
@@ -1378,7 +1430,7 @@
         cover: item.cover ? String(item.cover).trim() : '',
         password: item.password ? String(item.password).trim() : '',
         featured: !!item.featured,
-        createdAt: Date.now() + validos.length,
+        createdAt: (typeof item.createdAt === 'number' && item.createdAt > 0) ? item.createdAt : Date.now() + validos.length,
         links: links
       });
     });
@@ -1468,6 +1520,9 @@
     showToast('Jogo adicionado' + (gameFeaturedInput && gameFeaturedInput.checked ? ' aos destaques' : ''));
   });
 
+  sortSelect.addEventListener('change', function() { sortMode = this.value; renderGames(searchInput.value); });
+  regionSelect.addEventListener('change', function() { regionFilter = this.value; renderGames(searchInput.value); });
+
   searchInput.addEventListener('input', function(e) { renderGames(e.target.value); });
   clearSearchBtn.addEventListener('click', function() {
     searchInput.value = ''; renderGames(''); searchInput.focus();
@@ -1531,6 +1586,7 @@
       setAdminUIVisible(isAdmin);
       showAppScreen();
       registerUser(user);
+      if (isAdmin) refreshAdminBadge();
       loadFavorites(function() {
         loadGames(function() { renderGames(searchInput.value); });
       });
@@ -1548,6 +1604,179 @@
   verifyResendBtn.addEventListener('click', function() { if (auth && auth.currentUser) sendVerification(auth.currentUser); });
   verifyLogoutBtn.addEventListener('click', function() { if (auth) auth.signOut(); });
 
+  // ====== Reportar link quebrado ======
+  function reportedKey() { return 'zenkai_reported_' + (currentUser ? currentUser.uid : 'local'); }
+  function getReported() { try { return JSON.parse(localStorage.getItem(reportedKey()) || '[]'); } catch (e) { return []; } }
+  function isReported(gameId, url) { return getReported().indexOf(gameId + '|' + url) !== -1; }
+  function markReported(gameId, url) {
+    var l = getReported(); l.push(gameId + '|' + url);
+    try { localStorage.setItem(reportedKey(), JSON.stringify(l)); } catch (e) {}
+  }
+
+  function reportLink(game, link, btn) {
+    if (!link) return;
+    if (!db || !currentUser) { showToast('Reporte indisponível no momento', true); return; }
+    if (isReported(game.id, link.url)) { showToast('Você já avisou sobre este link. Obrigado!'); return; }
+    if (!confirm('Avisar os administradores que este link está quebrado?\n\n' + (link.label || 'Link'))) return;
+    db.collection('reports').add({
+      gameId: game.id, gameName: game.name || '', linkLabel: link.label || 'Link', linkUrl: link.url,
+      uid: currentUser.uid, email: currentUser.email || '', at: Date.now()
+    }).then(function() {
+      markReported(game.id, link.url);
+      if (btn) btn.classList.add('is-reported');
+      showToast('Obrigado! Avisamos os administradores.');
+      refreshAdminBadge();
+    }).catch(function(e) {
+      showToast('Não foi possível enviar o aviso (' + (e && e.code ? e.code : 'erro') + ')', true);
+    });
+  }
+
+  // ====== Pedir um jogo ======
+  function openRequestModal(prefill) {
+    requestNameInput.value = prefill || '';
+    requestNoteInput.value = '';
+    requestModalOverlay.classList.add('active');
+    setTimeout(function() { (prefill ? requestNoteInput : requestNameInput).focus(); }, 100);
+  }
+  function closeRequestModal() { requestModalOverlay.classList.remove('active'); }
+
+  requestBtn.addEventListener('click', function() { openRequestModal(''); });
+  closeRequestBtn.addEventListener('click', closeRequestModal);
+  requestModalOverlay.addEventListener('click', function(e) { if (e.target === requestModalOverlay) closeRequestModal(); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeRequestModal(); });
+
+  requestForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    var name = requestNameInput.value.trim();
+    var note = requestNoteInput.value.trim();
+    if (!name) return;
+    if (!db || !currentUser) { showToast('Pedidos indisponíveis no momento', true); return; }
+    var exists = games.some(function(g) { return (g.name || '').trim().toLowerCase() === name.toLowerCase(); });
+    if (exists) { showToast('Esse jogo já está na coleção', true); return; }
+    var last = parseInt(localStorage.getItem('zenkai_last_request') || '0', 10);
+    if (Date.now() - last < 30000) { showToast('Aguarde alguns segundos para fazer outro pedido', true); return; }
+    db.collection('requests').add({
+      name: name, note: note, uid: currentUser.uid, email: currentUser.email || '', at: Date.now()
+    }).then(function() {
+      try { localStorage.setItem('zenkai_last_request', String(Date.now())); } catch (err) {}
+      closeRequestModal();
+      showToast('Pedido enviado! Obrigado.');
+      refreshAdminBadge();
+    }).catch(function(err) {
+      showToast('Não foi possível enviar o pedido (' + (err && err.code ? err.code : 'erro') + ')', true);
+    });
+  });
+
+  // ====== Caixa de entrada do admin (reportes + pedidos) ======
+  var inbox = { reports: [], requests: [] };
+  var shownGroups = { reports: [], requests: [] };
+
+  function fetchInbox() {
+    return Promise.all(['reports', 'requests'].map(function(c) {
+      return db.collection(c).orderBy('at', 'desc').limit(300).get().then(function(snap) {
+        var l = [];
+        snap.forEach(function(d) { var r = d.data(); r._id = d.id; l.push(r); });
+        return l;
+      });
+    })).then(function(res) {
+      inbox.reports = res[0]; inbox.requests = res[1];
+      updateInboxCounts();
+    });
+  }
+
+  // Junta avisos iguais (mesmo jogo + link, ou mesmo nome de jogo) numa linha só
+  function groupInbox(list, keyFn) {
+    var map = {}, out = [];
+    list.forEach(function(r) {
+      var k = keyFn(r);
+      if (!map[k]) { map[k] = { first: r, ids: [], uids: {}, people: 0, notes: [], last: r.at }; out.push(map[k]); }
+      var g = map[k];
+      g.ids.push(r._id);
+      if (!g.uids[r.uid]) { g.uids[r.uid] = 1; g.people++; }
+      if (r.note && g.notes.indexOf(r.note) === -1) g.notes.push(r.note);
+      if (r.at > g.last) g.last = r.at;
+    });
+    return out;
+  }
+  function reportGroups()  { return groupInbox(inbox.reports,  function(r) { return r.gameId + '|' + r.linkUrl; }); }
+  function requestGroups() { return groupInbox(inbox.requests, function(r) { return (r.name || '').trim().toLowerCase(); }); }
+
+  function updateInboxCounts() {
+    var nr = reportGroups().length, nq = requestGroups().length;
+    admCountReports.textContent = nr || '';
+    admCountRequests.textContent = nq || '';
+    adminDot.style.display = (nr + nq) ? 'block' : 'none';
+  }
+  function refreshAdminBadge() {
+    if (!isAdmin || !db) return;
+    fetchInbox().catch(function(e) { console.warn('Não carregou reportes/pedidos:', e); });
+  }
+  function fmtWhen(t) {
+    return new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+  }
+  function peopleLabel(g) { return g.people + (g.people === 1 ? ' pessoa' : ' pessoas'); }
+
+  function renderReports() {
+    var groups = shownGroups.reports = reportGroups();
+    if (!groups.length) { admReportsList.innerHTML = '<p class="help-text">Nenhum link reportado.</p>'; return; }
+    admReportsList.innerHTML = groups.map(function(g, i) {
+      var r = g.first;
+      var exists = games.some(function(x) { return x.id === r.gameId; });
+      return '<div class="adm-row col"><div class="adm-what"><b>' + escapeHtml(r.gameName) + '</b> — ' + escapeHtml(r.linkLabel) +
+             '<br><span class="adm-date">' + escapeHtml(truncateUrl(r.linkUrl)) + '</span>' +
+             '<br><span class="adm-date">' + peopleLabel(g) + ' avisou · último em ' + escapeHtml(fmtWhen(g.last)) + '</span></div>' +
+             '<div class="adm-actions">' +
+             (exists ? '<button type="button" class="btn-secondary adm-btn" data-rep-open="' + i + '">Ver jogo</button>' : '') +
+             '<button type="button" class="btn-save adm-btn" data-rep-done="' + i + '">Resolvido</button></div></div>';
+    }).join('');
+  }
+
+  function renderRequests() {
+    var groups = shownGroups.requests = requestGroups();
+    if (!groups.length) { admRequestsList.innerHTML = '<p class="help-text">Nenhum pedido no momento.</p>'; return; }
+    admRequestsList.innerHTML = groups.map(function(g, i) {
+      var r = g.first;
+      return '<div class="adm-row col"><div class="adm-what"><b>' + escapeHtml(r.name) + '</b>' +
+             (g.notes.length ? '<br>' + escapeHtml(g.notes.slice(0, 2).join(' · ')) : '') +
+             '<br><span class="adm-date">' + peopleLabel(g) + ' · ' + escapeHtml(r.email || '') + ' · ' + escapeHtml(fmtWhen(g.last)) + '</span></div>' +
+             '<div class="adm-actions">' +
+             '<button type="button" class="btn-secondary adm-btn" data-req-add="' + i + '">Adicionar</button>' +
+             '<button type="button" class="btn-save adm-btn" data-req-done="' + i + '">Concluído</button></div></div>';
+    }).join('');
+  }
+
+  function resolveGroup(kind, idx) {
+    var g = shownGroups[kind][idx];
+    if (!g || !isAdmin) return;
+    var col = kind === 'reports' ? 'reports' : 'requests';
+    Promise.all(g.ids.map(function(id) { return db.collection(col).doc(id).delete(); })).then(function() {
+      var gone = {}; g.ids.forEach(function(id) { gone[id] = 1; });
+      inbox[col] = inbox[col].filter(function(r) { return !gone[r._id]; });
+      logHistory(kind === 'reports' ? 'report_done' : 'request_done',
+        { game: kind === 'reports' ? g.first.gameName : g.first.name, detail: kind === 'reports' ? g.first.linkLabel : '' });
+      updateInboxCounts();
+      if (kind === 'reports') renderReports(); else renderRequests();
+      showToast('Marcado como concluído');
+    }).catch(function(e) {
+      showToast('Não foi possível concluir (' + (e && e.code ? e.code : 'erro') + ')', true);
+    });
+  }
+
+  admReportsList.addEventListener('click', function(e) {
+    var o = e.target.closest('[data-rep-open]'), d = e.target.closest('[data-rep-done]');
+    if (o) {
+      var g = shownGroups.reports[parseInt(o.getAttribute('data-rep-open'), 10)];
+      if (g) { adminModalOverlay.classList.remove('active'); openDetails(g.first.gameId); }
+    } else if (d) resolveGroup('reports', parseInt(d.getAttribute('data-rep-done'), 10));
+  });
+  admRequestsList.addEventListener('click', function(e) {
+    var a = e.target.closest('[data-req-add]'), d = e.target.closest('[data-req-done]');
+    if (a) {
+      var g = shownGroups.requests[parseInt(a.getAttribute('data-req-add'), 10)];
+      if (g) { adminModalOverlay.classList.remove('active'); openModal(); gameNameInput.value = g.first.name; }
+    } else if (d) resolveGroup('requests', parseInt(d.getAttribute('data-req-done'), 10));
+  });
+
   // ====== Histórico de alterações ======
   function logHistory(action, extra) {
     if (!db || !currentUser) return;
@@ -1559,7 +1788,8 @@
   var ACTION_LABELS = {
     add: 'adicionou', remove: 'removeu', import: 'importou', feature: 'destacou',
     unfeature: 'tirou dos destaques', cover: 'trocou a capa de', edit: 'editou',
-    promote: 'promoveu a admin', demote: 'removeu de admin'
+    promote: 'promoveu a admin', demote: 'removeu de admin',
+    report_done: 'resolveu o reporte de', request_done: 'concluiu o pedido de'
   };
 
   function loadHistory() {
@@ -1625,13 +1855,29 @@
     });
   }
 
+  var ADM_HELP = {
+    admins: 'Aparecem aqui as contas que já entraram no site. Quem for promovido passa a poder adicionar, remover e editar jogos.',
+    reports: 'Links que os usuários marcaram como quebrados. Corrija o link no jogo e clique em Resolvido.',
+    requests: 'Jogos que os usuários pediram. "Adicionar" abre o formulário já com o nome; depois marque como concluído.',
+    history: ''
+  };
   function showAdmTab(tab) {
     var tabs = document.querySelectorAll('.adm-tab');
     for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', tabs[i].getAttribute('data-adm-tab') === tab);
-    admUsersList.style.display = tab === 'admins' ? '' : 'none';
-    admHistoryList.style.display = tab === 'history' ? '' : 'none';
-    admHelp.style.display = tab === 'admins' ? '' : 'none';
-    if (tab === 'admins') loadAdminUsers(); else loadHistory();
+    var lists = { admins: admUsersList, history: admHistoryList, reports: admReportsList, requests: admRequestsList };
+    for (var k in lists) lists[k].style.display = k === tab ? '' : 'none';
+    admHelp.textContent = ADM_HELP[tab];
+    admHelp.style.display = ADM_HELP[tab] ? '' : 'none';
+    if (tab === 'admins') loadAdminUsers();
+    else if (tab === 'history') loadHistory();
+    else {
+      var box = lists[tab];
+      box.innerHTML = '<p class="help-text">Carregando...</p>';
+      fetchInbox().then(function() { if (tab === 'reports') renderReports(); else renderRequests(); })
+        .catch(function(e) {
+          box.innerHTML = '<p class="help-text">Não foi possível ler (' + escapeHtml(e && e.code ? e.code : 'erro') + '). Confira as regras do Firestore.</p>';
+        });
+    }
   }
 
   adminPanelBtn.addEventListener('click', function() {
